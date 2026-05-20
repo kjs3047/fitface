@@ -17,6 +17,7 @@ import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
 import 'package:fitface/domain/services/local_gemma_personal_color_service.dart';
 import 'package:fitface/domain/services/local_gemma_model_service.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
+import 'package:fitface/domain/services/open_ai_analysis_service.dart';
 import 'package:fitface/domain/services/open_ai_personal_color_service.dart';
 import 'package:fitface/domain/services/personal_color_engine_adapter.dart';
 import 'package:fitface/providers/camera_overlay_provider.dart';
@@ -245,6 +246,146 @@ void main() {
     expect(imported!.name, 'gemma-4-E4B-it.litertlm');
     expect(imported.path, contains('/models/gemma-4-E4B-it.litertlm'));
     expect(imported.bytes, 3456789012);
+  });
+
+  test('OpenAiAnalysisService posts sanitized snapshot image to proxy',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_openai_snapshot_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 24, height: 18);
+    img.fill(source, color: img.ColorRgb8(80, 120, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      img.encodePng(source),
+      flush: true,
+    );
+    Uri? capturedUri;
+    Map<String, dynamic>? capturedBody;
+    final service = OpenAiAnalysisService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'https://fitface.example',
+      ),
+      client: _FakeHttpClient((uri, body) {
+        capturedUri = uri;
+        capturedBody = body;
+        return {
+          'result': {
+            'score': 84,
+            'comment': 'OpenAI 스냅샷 테스트 응답입니다.',
+            'tags': ['openai'],
+            'strengths': ['밝기가 안정적입니다.'],
+            'concerns': ['조명에 따라 달라질 수 있습니다.'],
+            'suggestions': ['비슷한 색감을 비교해보세요.'],
+            'confidence': 0.78,
+          },
+        };
+      }),
+    );
+
+    final result = await service.analyzeSnapshot(
+      AiSnapshotAnalysisRequest(
+        snapshot: OutfitSnapshot(
+          id: 'snapshot_1',
+          imagePath: sourceFile.path,
+          createdAt: DateTime(2026),
+          memo: '후보 메모',
+        ),
+        prompt: 'snapshot prompt',
+        includeImage: true,
+      ),
+    );
+
+    expect(capturedUri?.path, '/ai/snapshot/analyze');
+    expect(capturedBody?['snapshotId'], 'snapshot_1');
+    expect(capturedBody?['memo'], '후보 메모');
+    expect(capturedBody?['imageBase64'], isA<String>());
+    expect(capturedBody?['imageMimeType'], 'image/jpeg');
+    expect(capturedBody?['mode'], 'imageAndFeatures');
+    expect(result.engine, 'openAi');
+    expect(result.analysisMode, 'imageAndFeatures');
+    expect(result.score, 84);
+  });
+
+  test('OpenAiAnalysisService posts compare payload to proxy', () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_openai_compare_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final snapshots = <OutfitSnapshot>[];
+    for (var index = 0; index < 2; index++) {
+      final source = img.Image(width: 20, height: 20);
+      img.fill(source, color: img.ColorRgb8(80 + index * 20, 120, 210));
+      final sourceFile = File('${tempRoot.path}/snapshot_$index.png');
+      await sourceFile.writeAsBytes(
+        img.encodePng(source),
+        flush: true,
+      );
+      snapshots.add(
+        OutfitSnapshot(
+          id: 'snapshot_$index',
+          imagePath: sourceFile.path,
+          createdAt: DateTime(2026, 5, 20, 12, index),
+        ),
+      );
+    }
+    Uri? capturedUri;
+    Map<String, dynamic>? capturedBody;
+    final service = OpenAiAnalysisService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'https://fitface.example',
+      ),
+      client: _FakeHttpClient((uri, body) {
+        capturedUri = uri;
+        capturedBody = body;
+        return {
+          'result': {
+            'score': 89,
+            'comment': 'OpenAI 비교 테스트 응답입니다.',
+            'bestSnapshotId': 'snapshot_1',
+            'candidateScores': {'snapshot_0': 77, 'snapshot_1': 89},
+            'candidateComments': {'snapshot_1': '가장 안정적입니다.'},
+            'tags': ['openai'],
+            'strengths': ['비교 기준이 명확합니다.'],
+            'concerns': ['조명 차이를 확인하세요.'],
+            'suggestions': ['두 번째 후보를 우선 보세요.'],
+            'confidence': 0.8,
+          },
+        };
+      }),
+    );
+
+    final result = await service.compareSnapshots(
+      AiCompareAnalysisRequest(
+        snapshots: snapshots,
+        prompt: 'compare prompt',
+        includeImages: true,
+        featuresBySnapshotId: const {},
+      ),
+    );
+
+    expect(capturedUri?.path, '/ai/snapshots/compare');
+    expect(capturedBody?['snapshotIds'], ['snapshot_0', 'snapshot_1']);
+    expect(capturedBody?['mode'], 'imageAndFeatures');
+    final images = capturedBody?['images'] as List<dynamic>;
+    expect(images, hasLength(2));
+    expect((images.first as Map)['snapshotId'], 'snapshot_0');
+    expect((images.first as Map)['imageMimeType'], 'image/jpeg');
+    expect((images.first as Map)['imageBase64'], isA<String>());
+    expect(result.engine, 'openAi');
+    expect(result.bestSnapshotId, 'snapshot_1');
+    expect(result.candidateScores['snapshot_1'], 89);
   });
 
   test('AiPersonalColorService falls back from vision to text features',
