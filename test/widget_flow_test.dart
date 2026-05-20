@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:fitface/app.dart';
 import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
@@ -27,6 +29,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:permission_handler_platform_interface/permission_handler_platform_interface.dart';
 
 void main() {
   late Directory tempRoot;
@@ -68,6 +71,49 @@ void main() {
     expect(find.textContaining('정면을 바라본 사진'), findsOneWidget);
     expect(find.textContaining('실루엣 선'), findsOneWidget);
   });
+
+  testWidgets(
+    'FaceCapture requests permission before opening the first camera',
+    (tester) async {
+      final originalCamera = CameraPlatform.instance;
+      final originalPermission = PermissionHandlerPlatform.instance;
+      final permission = _GrantingPermissionHandler();
+      final camera = _FaceCaptureCameraPlatform(
+        canUseCamera: () => permission.requestedPermissions.isNotEmpty,
+      );
+      CameraPlatform.instance = camera;
+      PermissionHandlerPlatform.instance = permission;
+
+      try {
+        await tester.pumpWidget(wrap(const FaceCaptureScreen()));
+        for (var i = 0; i < 12; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+          if (find.text('촬영하기').evaluate().isNotEmpty &&
+              find.widgetWithText(FilledButton, '촬영하기').evaluate().isNotEmpty) {
+            final button = tester.widget<FilledButton>(
+              find.widgetWithText(FilledButton, '촬영하기'),
+            );
+            if (button.onPressed != null) {
+              break;
+            }
+          }
+        }
+
+        expect(permission.requestedPermissions, contains(Permission.camera));
+        expect(camera.availableCameraCalls, 1);
+        expect(camera.createdCameraCount, 1);
+        expect(find.textContaining('카메라를 사용할 수 없습니다'), findsNothing);
+        final captureButton = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, '촬영하기'),
+        );
+        expect(captureButton.onPressed, isNotNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        CameraPlatform.instance = originalCamera;
+        PermissionHandlerPlatform.instance = originalPermission;
+      }
+    },
+  );
 
   testWidgets('FaceRegister shows current registered face image', (
     tester,
@@ -431,6 +477,128 @@ class _WarningFaceImageQualityService extends FaceImageQualityService {
         warmCoolBias: -0.02,
       ),
     );
+  }
+}
+
+class _GrantingPermissionHandler extends PermissionHandlerPlatform {
+  final requestedPermissions = <Permission>[];
+
+  @override
+  Future<PermissionStatus> checkPermissionStatus(Permission permission) async {
+    return PermissionStatus.granted;
+  }
+
+  @override
+  Future<ServiceStatus> checkServiceStatus(Permission permission) async {
+    return ServiceStatus.enabled;
+  }
+
+  @override
+  Future<bool> openAppSettings() async {
+    return true;
+  }
+
+  @override
+  Future<Map<Permission, PermissionStatus>> requestPermissions(
+    List<Permission> permissions,
+  ) async {
+    requestedPermissions.addAll(permissions);
+    return {
+      for (final permission in permissions)
+        permission: PermissionStatus.granted,
+    };
+  }
+
+  @override
+  Future<bool> shouldShowRequestPermissionRationale(
+    Permission permission,
+  ) async {
+    return false;
+  }
+}
+
+class _FaceCaptureCameraPlatform extends CameraPlatform {
+  _FaceCaptureCameraPlatform({required this.canUseCamera});
+
+  final bool Function() canUseCamera;
+  final _initializedControllers =
+      <int, StreamController<CameraInitializedEvent>>{};
+  final _errorControllers = <int, StreamController<CameraErrorEvent>>{};
+  int availableCameraCalls = 0;
+  int createdCameraCount = 0;
+
+  @override
+  Future<List<CameraDescription>> availableCameras() async {
+    availableCameraCalls++;
+    if (!canUseCamera()) {
+      throw StateError('camera permission was not requested first');
+    }
+    return const [
+      CameraDescription(
+        name: 'front',
+        lensDirection: CameraLensDirection.front,
+        sensorOrientation: 90,
+      ),
+    ];
+  }
+
+  @override
+  Future<int> createCamera(
+    CameraDescription cameraDescription,
+    ResolutionPreset? resolutionPreset, {
+    bool enableAudio = false,
+  }) async {
+    createdCameraCount++;
+    final cameraId = createdCameraCount;
+    _initializedControllers[cameraId] =
+        StreamController<CameraInitializedEvent>.broadcast();
+    _errorControllers[cameraId] =
+        StreamController<CameraErrorEvent>.broadcast();
+    return cameraId;
+  }
+
+  @override
+  Future<void> initializeCamera(
+    int cameraId, {
+    ImageFormatGroup imageFormatGroup = ImageFormatGroup.unknown,
+  }) async {
+    _initializedControllers[cameraId]?.add(
+      const CameraInitializedEvent(
+        1,
+        720,
+        1280,
+        ExposureMode.auto,
+        true,
+        FocusMode.auto,
+        true,
+      ),
+    );
+  }
+
+  @override
+  Stream<CameraInitializedEvent> onCameraInitialized(int cameraId) {
+    return _initializedControllers[cameraId]!.stream;
+  }
+
+  @override
+  Stream<CameraErrorEvent> onCameraError(int cameraId) {
+    return _errorControllers[cameraId]!.stream;
+  }
+
+  @override
+  Stream<DeviceOrientationChangedEvent> onDeviceOrientationChanged() {
+    return const Stream<DeviceOrientationChangedEvent>.empty();
+  }
+
+  @override
+  Widget buildPreview(int cameraId) {
+    return const ColoredBox(color: Colors.black);
+  }
+
+  @override
+  Future<void> dispose(int cameraId) async {
+    await _initializedControllers.remove(cameraId)?.close();
+    _errorControllers.remove(cameraId);
   }
 }
 

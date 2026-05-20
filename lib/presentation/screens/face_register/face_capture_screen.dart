@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/constants/storage_keys.dart';
 import '../../../core/theme/app_theme.dart';
@@ -26,6 +27,7 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
   bool _isInitializing = true;
   bool _isCapturing = false;
   String? _cameraError;
+  int _cameraInitToken = 0;
 
   @override
   void initState() {
@@ -44,7 +46,11 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _initializeCamera();
+      final controller = _controller;
+      if (!_isInitializing &&
+          (controller == null || !controller.value.isInitialized)) {
+        _initializeCamera();
+      }
       return;
     }
 
@@ -53,6 +59,7 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
       return;
     }
     if (state == AppLifecycleState.inactive) {
+      _cameraInitToken++;
       controller.dispose();
       _controller = null;
       return;
@@ -60,12 +67,34 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
   }
 
   Future<void> _initializeCamera() async {
+    if (!mounted) {
+      return;
+    }
+    final initToken = ++_cameraInitToken;
+    CameraController? nextController;
     setState(() {
       _isInitializing = true;
       _cameraError = null;
     });
     try {
+      final permission = await Permission.camera.request();
+      if (!mounted || initToken != _cameraInitToken) {
+        return;
+      }
+      if (!permission.isGranted) {
+        setState(() {
+          _cameraError = permission.isPermanentlyDenied
+              ? '카메라 권한이 차단되어 있습니다. Android 설정에서 FitFace의 카메라 권한을 허용해주세요.'
+              : '카메라 권한이 필요합니다. 얼굴 촬영을 계속하려면 카메라 접근을 허용해주세요.';
+          _isInitializing = false;
+        });
+        return;
+      }
+
       final cameras = await availableCameras();
+      if (!mounted || initToken != _cameraInitToken) {
+        return;
+      }
       if (cameras.isEmpty) {
         throw StateError('사용 가능한 카메라가 없습니다.');
       }
@@ -73,23 +102,34 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
         (camera) => camera.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(
+      nextController = CameraController(
         selectedCamera,
         ResolutionPreset.high,
         enableAudio: false,
       );
-      await controller.initialize();
-      if (!mounted) {
-        await controller.dispose();
+      await nextController.initialize();
+      if (!mounted || initToken != _cameraInitToken) {
+        await nextController.dispose();
         return;
       }
-      await _controller?.dispose();
+      final previousController = _controller;
+      final initializedController = nextController;
+      nextController = null;
       setState(() {
-        _controller = controller;
+        _controller = initializedController;
         _isInitializing = false;
       });
+      try {
+        await previousController?.dispose();
+      } catch (_) {
+        // Replacing the preview already succeeded; old controller cleanup is best effort.
+      }
     } catch (error) {
+      await nextController?.dispose();
       if (!mounted) {
+        return;
+      }
+      if (initToken != _cameraInitToken) {
         return;
       }
       setState(() {

@@ -19,10 +19,12 @@ dependencies:
   image: ^4.2.0
 
 dev_dependencies:
+  camera_platform_interface: ^2.13.0
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
+  permission_handler_platform_interface: ^4.3.0
   flutter_lints: ^4.0.0
 
 flutter:
