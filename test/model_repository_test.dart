@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:fitface/core/errors/app_exception.dart';
 import 'package:fitface/data/local/local_file_storage.dart';
+import 'package:fitface/data/models/ai_settings.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
+import 'package:fitface/data/repositories/ai_settings_repository.dart';
 import 'package:fitface/data/repositories/snapshot_repository.dart';
 import 'package:fitface/data/repositories/user_profile_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -80,6 +82,16 @@ void main() {
         'candidate_1': 91,
         'candidate_2': 72,
       },
+      candidateComments: {
+        'candidate_1': '가장 안정적인 후보입니다.',
+      },
+      tags: ['쿨톤추천', '밝은색감'],
+      strengths: ['얼굴 주변 밝기가 안정적입니다.'],
+      concerns: ['매장 조명에 따라 달라질 수 있습니다.'],
+      suggestions: ['소프트 블루 계열을 우선 보세요.'],
+      confidence: 0.82,
+      engine: 'localGemma',
+      analysisMode: 'imageAndFeatures',
       comment: '후보별 점수 테스트',
     );
 
@@ -90,5 +102,34 @@ void main() {
     expect(decoded.candidateScores['candidate_0'], 78);
     expect(decoded.candidateScores['candidate_1'], 91);
     expect(decoded.candidateScores['candidate_2'], 72);
+    expect(decoded.candidateComments['candidate_1'], '가장 안정적인 후보입니다.');
+    expect(decoded.tags, contains('쿨톤추천'));
+    expect(decoded.strengths, isNotEmpty);
+    expect(decoded.concerns, isNotEmpty);
+    expect(decoded.suggestions, isNotEmpty);
+    expect(decoded.confidence, 0.82);
+    expect(decoded.engine, 'localGemma');
+    expect(decoded.analysisMode, 'imageAndFeatures');
+  });
+
+  test('AiSettingsRepository persists engine and proxy settings', () async {
+    final repository = AiSettingsRepository(storage);
+
+    final saved = await repository.saveSettings(
+      AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'https://example.com',
+      ),
+    );
+
+    final loaded = await repository.loadSettings();
+    expect(saved.mode, AiEngineMode.openAi);
+    expect(loaded.mode, AiEngineMode.openAi);
+    expect(loaded.allowCloudAnalysis, isTrue);
+    expect(loaded.openAiProxyUrl, 'https://example.com');
+
+    await repository.clearSettings();
+    expect((await repository.loadSettings()).mode, AiEngineMode.mock);
   });
 }

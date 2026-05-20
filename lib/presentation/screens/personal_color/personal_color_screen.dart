@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/personal_color_result.dart';
 import '../../../data/models/user_profile.dart';
+import '../../../providers/repository_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
@@ -22,8 +23,11 @@ class PersonalColorScreen extends ConsumerStatefulWidget {
 }
 
 class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
-  Future<PersonalColorResult>? _analysisFuture;
-  String? _analysisImagePath;
+  PersonalColorResult? _result;
+  String? _resultImagePath;
+  bool _isLoadingCached = false;
+  bool _isAnalyzing = false;
+  String? _error;
 
   @override
   Widget build(BuildContext context) {
@@ -52,10 +56,7 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
             );
           }
 
-          if (_analysisImagePath != faceImagePath) {
-            _analysisImagePath = faceImagePath;
-            _analysisFuture = _analyze(faceImagePath);
-          }
+          _ensureCachedResultLoaded(faceImagePath);
 
           return SafeArea(
             child: ListView(
@@ -77,7 +78,7 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
                         Expanded(
                           child: Text(
                             '퍼스널 컬러 진단은 아래 얼굴 이미지를 기준으로 제공됩니다. '
-                            '밝은 자연광에서 촬영한 정면 사진일수록 참고하기 좋습니다.',
+                            '분석 시작을 누르면 선택한 AI 엔진으로 추천 팔레트를 확인합니다.',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ),
@@ -86,43 +87,7 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                FutureBuilder<PersonalColorResult>(
-                  future: _analysisFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(18),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                ),
-                              ),
-                              SizedBox(width: 12),
-                              Expanded(child: Text('퍼스널 컬러를 확인하는 중입니다.')),
-                            ],
-                          ),
-                        ),
-                      );
-                    }
-                    if (snapshot.hasError) {
-                      return Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            '퍼스널 컬러를 확인하지 못했습니다: ${snapshot.error}',
-                          ),
-                        ),
-                      );
-                    }
-                    final result = snapshot.data!;
-                    return PersonalColorResultCard(result: result);
-                  },
-                ),
+                _buildAnalysisSection(faceImagePath),
               ],
             ),
           );
@@ -131,10 +96,149 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
     );
   }
 
-  Future<PersonalColorResult> _analyze(String faceImagePath) async {
-    return ref
-        .read(personalColorServiceProvider)
-        .analyze(faceImagePath: faceImagePath);
+  void _ensureCachedResultLoaded(String faceImagePath) {
+    if (_resultImagePath == faceImagePath || _isLoadingCached) {
+      return;
+    }
+    _resultImagePath = faceImagePath;
+    _result = null;
+    _error = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isLoadingCached = true);
+      try {
+        final cached =
+            await ref.read(personalColorRepositoryProvider).loadResult();
+        if (!mounted || _resultImagePath != faceImagePath) {
+          return;
+        }
+        setState(() => _result = cached);
+      } catch (error) {
+        if (mounted && _resultImagePath == faceImagePath) {
+          setState(() => _error = error.toString());
+        }
+      } finally {
+        if (mounted && _resultImagePath == faceImagePath) {
+          setState(() => _isLoadingCached = false);
+        }
+      }
+    });
+  }
+
+  Widget _buildAnalysisSection(String faceImagePath) {
+    if (_isLoadingCached || _isAnalyzing) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(18),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+              SizedBox(width: 12),
+              Expanded(child: Text('퍼스널 컬러를 확인하는 중입니다.')),
+            ],
+          ),
+        ),
+      );
+    }
+    final error = _error;
+    if (error != null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('퍼스널 컬러를 확인하지 못했습니다: $error'),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _analyze(faceImagePath),
+                icon: const Icon(Icons.refresh),
+                label: const Text('다시 분석'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final result = _result;
+    if (result != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PersonalColorResultCard(result: result),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            key: const Key('personal-color-reanalyze-button'),
+            onPressed: () => _analyze(faceImagePath),
+            icon: const Icon(Icons.refresh),
+            label: const Text('다시 분석'),
+          ),
+        ],
+      );
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              '퍼스널 컬러 분석',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '밝은 자연광의 정면 사진일수록 결과를 참고하기 좋습니다. 결과는 스타일링 보조용입니다.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: const Key('personal-color-start-analysis-button'),
+              onPressed: () => _analyze(faceImagePath),
+              icon: const Icon(Icons.auto_awesome_outlined),
+              label: const Text('분석 시작'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _analyze(String faceImagePath) async {
+    if (_isAnalyzing) {
+      return;
+    }
+    setState(() {
+      _isAnalyzing = true;
+      _error = null;
+    });
+    try {
+      final result = await ref
+          .read(personalColorServiceProvider)
+          .analyze(faceImagePath: faceImagePath);
+      await ref.read(personalColorRepositoryProvider).saveResult(result);
+      await ref
+          .read(userProfileProvider.notifier)
+          .savePersonalColorType(result.type);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _result = result);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAnalyzing = false);
+      }
+    }
   }
 
   String? _personalColorFacePath(UserProfile? profile) {

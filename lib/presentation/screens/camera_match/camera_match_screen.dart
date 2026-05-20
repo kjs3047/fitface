@@ -32,6 +32,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
   bool _isInitializing = true;
   bool _permissionDenied = false;
   bool _isSaving = false;
+  bool _isAiPreviewing = false;
   String? _error;
 
   @override
@@ -92,29 +93,88 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
   }
 
   Future<void> _runAiPreview() async {
-    final result = await ref.read(aiAnalysisServiceProvider).analyzeSnapshot(
-          OutfitSnapshot(
-            id: 'preview',
-            imagePath: '',
-            createdAt: DateTime.now(),
-          ),
-        );
-    if (!mounted) {
+    if (_isAiPreviewing) {
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('AI 판단'),
-        content: Text(result.comment),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('확인'),
+    setState(() => _isAiPreviewing = true);
+    OutfitSnapshot? preview;
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw StateError('캡처 영역을 찾을 수 없습니다.');
+      }
+      final pixelRatio = MediaQuery.of(context).devicePixelRatio;
+      final image = await boundary.toImage(pixelRatio: pixelRatio);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) {
+        throw StateError('AI 판단용 이미지를 만들 수 없습니다.');
+      }
+      preview = await ref
+          .read(snapshotProvider.notifier)
+          .createSnapshotFromBytes(data.buffer.asUint8List());
+      final result = await ref.read(aiAnalysisServiceProvider).analyzeSnapshot(
+            preview,
+          );
+      await ref.read(localFileStorageProvider).deleteFileSafely(
+            preview.imagePath,
+          );
+      if (!mounted) {
+        return;
+      }
+      await showModalBottomSheet<void>(
+        context: context,
+        builder: (context) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.auto_awesome_outlined),
+                  const SizedBox(width: 8),
+                  Text(
+                    'AI 판단',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const Spacer(),
+                  Text('${result.score.clamp(0, 100)}/100'),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(result.comment),
+              if (result.tags.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final tag in result.tags) Chip(label: Text(tag)),
+                  ],
+                ),
+              ],
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    } catch (error) {
+      if (preview != null) {
+        await ref.read(localFileStorageProvider).deleteFileSafely(
+              preview.imagePath,
+            );
+      }
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI 판단에 실패했습니다: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isAiPreviewing = false);
+      }
+    }
   }
 
   Future<void> _saveSnapshot() async {
@@ -304,6 +364,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
                   _BottomControls(
                     opacity: overlay.opacity,
                     isSaving: _isSaving,
+                    isAiPreviewing: _isAiPreviewing,
                     onOpacityChanged:
                         ref.read(cameraOverlayProvider.notifier).setOpacity,
                     onReset: ref.read(cameraOverlayProvider.notifier).reset,
@@ -369,6 +430,7 @@ class _BottomControls extends StatelessWidget {
   const _BottomControls({
     required this.opacity,
     required this.isSaving,
+    required this.isAiPreviewing,
     required this.onOpacityChanged,
     required this.onReset,
     required this.onAi,
@@ -377,6 +439,7 @@ class _BottomControls extends StatelessWidget {
 
   final double opacity;
   final bool isSaving;
+  final bool isAiPreviewing;
   final ValueChanged<double> onOpacityChanged;
   final VoidCallback onReset;
   final VoidCallback onAi;
@@ -416,9 +479,9 @@ class _BottomControls extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: onAi,
+                    onPressed: isAiPreviewing ? null : onAi,
                     icon: const Icon(Icons.auto_awesome_outlined),
-                    label: const Text('AI판단'),
+                    label: Text(isAiPreviewing ? '분석 중' : 'AI판단'),
                   ),
                 ),
                 const SizedBox(width: 8),

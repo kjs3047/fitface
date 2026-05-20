@@ -2,9 +2,14 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fitface/data/local/local_file_storage.dart';
+import 'package:fitface/data/models/ai_analysis_result.dart';
+import 'package:fitface/data/models/ai_settings.dart';
 import 'package:fitface/data/models/outfit_snapshot.dart';
 import 'package:fitface/core/utils/face_cutout_geometry.dart';
+import 'package:fitface/domain/services/ai_analysis_coordinator.dart';
+import 'package:fitface/domain/services/ai_engine_adapter.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
+import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
 import 'package:fitface/providers/camera_overlay_provider.dart';
 import 'package:fitface/providers/storage_provider.dart';
@@ -88,6 +93,67 @@ void main() {
     expect(result.comment, contains('얼굴 밝기'));
   });
 
+  test('ImageFeatureExtractor returns palette and quality metrics', () async {
+    final tempRoot = await Directory.systemTemp.createTemp('fitface_feature_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 80, height: 80);
+    img.fill(source, color: img.ColorRgb8(80, 120, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+
+    final features = await const ImageFeatureExtractor().extract(
+      sourceFile.path,
+    );
+
+    expect(features.averageHex, startsWith('#'));
+    expect(features.dominantColors, isNotEmpty);
+    expect(features.brightness, greaterThan(0));
+    expect(features.saturation, greaterThan(0));
+    expect(features.toPromptText(), contains('dominant'));
+  });
+
+  test('AiAnalysisCoordinator falls back from vision to text features',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_ai_coordinator_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 80, height: 80);
+    img.fill(source, color: img.ColorRgb8(180, 190, 220));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma),
+      featureExtractor: const ImageFeatureExtractor(),
+      localGemmaService: const _VisionFailsTextSucceedsEngine(),
+    );
+
+    final result = await coordinator.analyzeSnapshot(
+      OutfitSnapshot(
+        id: 'candidate',
+        imagePath: sourceFile.path,
+        createdAt: DateTime(2026),
+      ),
+    );
+
+    expect(result.engine, 'localGemma');
+    expect(result.analysisMode, 'featuresOnly');
+    expect(result.tags, contains('fallback-text'));
+  });
+
   test('CameraOverlayProvider clamps opacity and scale', () async {
     final tempRoot = await Directory.systemTemp.createTemp('fitface_provider_');
     final storage = await LocalFileStorage.create(root: tempRoot);
@@ -110,4 +176,40 @@ void main() {
     expect(state.scale, 3.0);
     expect(state.position, const Offset(12, 18));
   });
+}
+
+class _VisionFailsTextSucceedsEngine implements AiEngineAdapter {
+  const _VisionFailsTextSucceedsEngine();
+
+  @override
+  String get engineName => 'localGemma';
+
+  @override
+  Future<AiAnalysisResult> analyzeSnapshot(
+    AiSnapshotAnalysisRequest request,
+  ) async {
+    if (request.includeImage) {
+      throw StateError('vision unavailable');
+    }
+    return AiAnalysisResult(
+      score: 81,
+      comment: '색상정보 기반 분석입니다.',
+      tags: const ['fallback-text'],
+      engine: engineName,
+      analysisMode: 'featuresOnly',
+      rawFeatureSummary: request.features?.toJson(),
+    );
+  }
+
+  @override
+  Future<AiAnalysisResult> compareSnapshots(
+    AiCompareAnalysisRequest request,
+  ) async {
+    return AiAnalysisResult(
+      score: 81,
+      comment: '색상정보 기반 비교입니다.',
+      engine: engineName,
+      analysisMode: 'featuresOnly',
+    );
+  }
 }

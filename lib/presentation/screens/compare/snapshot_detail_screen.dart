@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/ai_analysis_result.dart';
 import '../../../data/models/outfit_snapshot.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
@@ -27,7 +28,9 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
   final _memoController = TextEditingController();
   PageController? _pageController;
   String? _currentSnapshotId;
+  String? _analyzingSnapshotId;
   int _currentIndex = 0;
+  final _sessionAiResults = <String, AiAnalysisResult>{};
 
   @override
   void dispose() {
@@ -110,24 +113,56 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
     if (snapshot == null) {
       return;
     }
-    final result = await ref.read(aiAnalysisServiceProvider).analyzeSnapshot(
-          snapshot,
-        );
-    if (!mounted) {
+    if (_analyzingSnapshotId != null) {
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('AI 판단'),
-        content: Text(result.comment),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('확인'),
-          ),
-        ],
-      ),
+    setState(() => _analyzingSnapshotId = snapshot.id);
+    try {
+      final result = await ref.read(aiAnalysisServiceProvider).analyzeSnapshot(
+            snapshot,
+          );
+      await ref.read(snapshotProvider.notifier).updateAiResult(
+            snapshotId: snapshot.id,
+            score: result.score,
+            comment: result.comment,
+            tags: result.tags,
+          );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _sessionAiResults[snapshot.id] = result;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI 판단을 완료하지 못했습니다: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _analyzingSnapshotId = null);
+      }
+    }
+  }
+
+  AiAnalysisResult? _visibleAiResult(OutfitSnapshot snapshot) {
+    final sessionResult = _sessionAiResults[snapshot.id];
+    if (sessionResult != null) {
+      return sessionResult;
+    }
+    final score = snapshot.aiScore;
+    final comment = snapshot.aiComment;
+    if (score == null || comment == null) {
+      return null;
+    }
+    return AiAnalysisResult(
+      score: score,
+      comment: comment,
+      tags: snapshot.tags,
+      engine: 'cached',
+      analysisMode: 'cached',
     );
   }
 
@@ -165,6 +200,8 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
 
           final snapshot =
               _currentSnapshot(snapshots) ?? snapshots[initialIndex];
+          final aiResult = _visibleAiResult(snapshot);
+          final isAnalyzing = _analyzingSnapshotId == snapshot.id;
           final visibleIndex =
               snapshots.indexWhere((item) => item.id == snapshot.id);
           final safeIndex = visibleIndex == -1 ? initialIndex : visibleIndex;
@@ -247,9 +284,11 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                           children: [
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: () => _runAi(snapshots),
+                                onPressed: isAnalyzing
+                                    ? null
+                                    : () => _runAi(snapshots),
                                 icon: const Icon(Icons.auto_awesome_outlined),
-                                label: const Text('AI 판단'),
+                                label: Text(isAnalyzing ? '분석 중' : 'AI 판단'),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -262,6 +301,13 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                             ),
                           ],
                         ),
+                        if (isAnalyzing || aiResult != null) ...[
+                          const SizedBox(height: 12),
+                          _SnapshotAiResultCard(
+                            result: aiResult,
+                            isLoading: isAnalyzing,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -270,6 +316,114 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _SnapshotAiResultCard extends StatelessWidget {
+  const _SnapshotAiResultCard({
+    required this.result,
+    required this.isLoading,
+  });
+
+  final AiAnalysisResult? result;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final currentResult = result;
+    if (isLoading && currentResult == null) {
+      return DecoratedBox(
+        key: const Key('snapshot-detail-ai-loading-card'),
+        decoration: BoxDecoration(
+          color: AppTheme.accentSoft,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppTheme.line),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(12),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 10),
+              Expanded(child: Text('AI가 후보를 분석하는 중입니다.')),
+            ],
+          ),
+        ),
+      );
+    }
+    final visibleResult = currentResult;
+    if (visibleResult == null) {
+      return const SizedBox.shrink();
+    }
+    return DecoratedBox(
+      key: const Key('snapshot-detail-ai-result-card'),
+      decoration: BoxDecoration(
+        color: AppTheme.accentSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppTheme.line),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'AI 분석 결과',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const Spacer(),
+                Text(
+                  '${visibleResult.score.clamp(0, 100)}/100',
+                  key: const Key('snapshot-detail-ai-score'),
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(visibleResult.comment),
+            if (visibleResult.tags.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final tag in visibleResult.tags)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppTheme.line),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 5,
+                        ),
+                        child: Text(tag),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (visibleResult.suggestions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                visibleResult.suggestions.first,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

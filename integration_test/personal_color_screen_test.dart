@@ -55,10 +55,17 @@ void main() {
 
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('여름 쿨').evaluate().isNotEmpty) {
+      if (find
+          .byKey(const Key('personal-color-start-analysis-button'))
+          .evaluate()
+          .isNotEmpty) {
         break;
       }
     }
+
+    await tester
+        .tap(find.byKey(const Key('personal-color-start-analysis-button')));
+    await tester.pump();
 
     expect(
       find.byKey(const Key('personal-color-face-thumbnail')),
@@ -66,6 +73,12 @@ void main() {
     );
     expect(find.text('현재 얼굴 이미지'), findsOneWidget);
     expect(find.text('이 얼굴에 대한 퍼스널 컬러 결과입니다.'), findsOneWidget);
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('여름 쿨').evaluate().isNotEmpty) {
+        break;
+      }
+    }
     expect(find.text('여름 쿨'), findsOneWidget);
   });
 }

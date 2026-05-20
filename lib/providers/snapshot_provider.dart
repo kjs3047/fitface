@@ -51,6 +51,26 @@ class SnapshotNotifier extends StateNotifier<AsyncValue<List<OutfitSnapshot>>> {
     await load();
   }
 
+  Future<void> updateAiResult({
+    required String snapshotId,
+    required int score,
+    required String comment,
+    required List<String> tags,
+  }) async {
+    await _repository.updateAiResult(
+      snapshotId: snapshotId,
+      score: score,
+      comment: comment,
+      tags: tags,
+    );
+    await load();
+  }
+
+  Future<void> clearAiResults() async {
+    await _repository.clearAiResults();
+    await load();
+  }
+
   Future<void> delete(String snapshotId) async {
     await _repository.deleteSnapshot(snapshotId);
     await load();

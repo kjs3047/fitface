@@ -55,6 +55,19 @@ class UserProfileRepository {
     return profile;
   }
 
+  Future<UserProfile> clearPersonalColorType() async {
+    final current = await loadProfile();
+    if (current == null) {
+      throw StateError('등록된 얼굴 프로필이 없습니다.');
+    }
+    final profile = current.copyWith(
+      clearPersonalColorType: true,
+      updatedAt: DateTime.now(),
+    );
+    await saveProfile(profile);
+    return profile;
+  }
+
   Future<void> saveProfile(UserProfile profile) async {
     await _storage.writeJsonMap(StorageKeys.profileJson, profile.toJson());
   }

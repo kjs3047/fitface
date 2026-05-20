@@ -72,6 +72,35 @@ class SnapshotRepository {
     return snapshot;
   }
 
+  Future<OutfitSnapshot> updateAiResult({
+    required String snapshotId,
+    required int score,
+    required String comment,
+    required List<String> tags,
+  }) async {
+    final snapshots = await loadSnapshots();
+    final index = snapshots.indexWhere((item) => item.id == snapshotId);
+    if (index == -1) {
+      throw StateError('후보를 찾을 수 없습니다.');
+    }
+    final updated = snapshots[index].copyWith(
+      aiScore: score,
+      aiComment: comment,
+      tags: tags,
+    );
+    snapshots[index] = updated;
+    await _saveSnapshots(snapshots);
+    return updated;
+  }
+
+  Future<void> clearAiResults() async {
+    final snapshots = await loadSnapshots();
+    await _saveSnapshots([
+      for (final snapshot in snapshots)
+        snapshot.copyWith(tags: const [], clearAi: true),
+    ]);
+  }
+
   Future<void> deleteSnapshot(String snapshotId) async {
     final snapshots = await loadSnapshots();
     final index = snapshots.indexWhere((item) => item.id == snapshotId);

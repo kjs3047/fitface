@@ -41,6 +41,12 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile?>> {
     return profile;
   }
 
+  Future<UserProfile> clearPersonalColorType() async {
+    final profile = await _repository.clearPersonalColorType();
+    state = AsyncValue.data(profile);
+    return profile;
+  }
+
   Future<void> clear() async {
     await _repository.clearProfile();
     state = const AsyncValue.data(null);

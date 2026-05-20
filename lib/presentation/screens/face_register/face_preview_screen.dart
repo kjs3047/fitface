@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../providers/camera_overlay_provider.dart';
+import '../../../providers/repository_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/app_routes.dart';
@@ -78,6 +79,7 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
             croppedFaceImagePath: widget.args.croppedImagePath,
             overlayFaceImagePath: overlayPath,
           );
+      await ref.read(personalColorRepositoryProvider).clearResult();
       await ref.read(cameraOverlayProvider.notifier).reset();
       if (!mounted) {
         return;

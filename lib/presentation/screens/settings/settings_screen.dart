@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/ai_settings.dart';
+import '../../../providers/ai_settings_provider.dart';
+import '../../../providers/repository_provider.dart';
 import '../../../providers/snapshot_provider.dart';
 import '../../../providers/storage_provider.dart';
 import '../../../providers/user_profile_provider.dart';
@@ -49,6 +52,70 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _setOpenAiProxyUrl(
+    BuildContext context,
+    WidgetRef ref,
+    String? currentValue,
+  ) async {
+    final controller = TextEditingController(text: currentValue ?? '');
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('OpenAI 프록시 주소'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: '프록시 URL',
+            hintText: 'https://example.com',
+          ),
+          keyboardType: TextInputType.url,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) {
+      return;
+    }
+    await ref.read(aiSettingsProvider.notifier).setOpenAiProxyUrl(value);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('OpenAI 프록시 주소를 저장했습니다.')),
+      );
+    }
+  }
+
+  Future<void> _clearAiCache(BuildContext context, WidgetRef ref) async {
+    final confirmed = await _confirm(
+      context,
+      title: 'AI 결과 삭제',
+      message: '후보 AI 점수, 태그, 퍼스널 컬러 분석 결과를 삭제할까요?',
+    );
+    if (confirmed != true) {
+      return;
+    }
+    await ref.read(snapshotProvider.notifier).clearAiResults();
+    await ref.read(personalColorRepositoryProvider).clearResult();
+    final profile = ref.read(userProfileProvider).valueOrNull;
+    if (profile?.personalColorType != null) {
+      await ref.read(userProfileProvider.notifier).clearPersonalColorType();
+    }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AI 분석 결과를 삭제했습니다.')),
+      );
+    }
+  }
+
   Future<bool?> _confirm(
     BuildContext context, {
     required String title,
@@ -75,6 +142,8 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final aiSettingsAsync = ref.watch(aiSettingsProvider);
+    final aiSettings = aiSettingsAsync.valueOrNull ?? AiSettings.defaults();
     return Scaffold(
       appBar: const AppTopBar(title: '설정'),
       body: SafeArea(
@@ -138,7 +207,6 @@ class SettingsScreen extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 12),
             Card(
               child: Column(
                 children: [
@@ -170,6 +238,21 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
+            _AiSettingsCard(
+              settings: aiSettings,
+              isLoading: aiSettingsAsync.isLoading,
+              onModeChanged: (mode) =>
+                  ref.read(aiSettingsProvider.notifier).setMode(mode),
+              onCloudConsentChanged: (value) =>
+                  ref.read(aiSettingsProvider.notifier).setCloudConsent(value),
+              onOpenAiProxyTap: () => _setOpenAiProxyUrl(
+                context,
+                ref,
+                aiSettings.openAiProxyUrl,
+              ),
+              onClearAiCache: () => _clearAiCache(context, ref),
+            ),
+            const SizedBox(height: 12),
             Card(
               child: Column(
                 children: [
@@ -190,6 +273,121 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AiSettingsCard extends StatelessWidget {
+  const _AiSettingsCard({
+    required this.settings,
+    required this.isLoading,
+    required this.onModeChanged,
+    required this.onCloudConsentChanged,
+    required this.onOpenAiProxyTap,
+    required this.onClearAiCache,
+  });
+
+  final AiSettings settings;
+  final bool isLoading;
+  final ValueChanged<AiEngineMode> onModeChanged;
+  final ValueChanged<bool> onCloudConsentChanged;
+  final VoidCallback onOpenAiProxyTap;
+  final VoidCallback onClearAiCache;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.auto_awesome_outlined),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'AI 설정',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (isLoading)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<AiEngineMode>(
+              key: const Key('ai-settings-mode-dropdown'),
+              initialValue: settings.mode,
+              decoration: const InputDecoration(
+                labelText: 'AI 엔진',
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: AiEngineMode.off,
+                  child: Text('Off'),
+                ),
+                DropdownMenuItem(
+                  value: AiEngineMode.mock,
+                  child: Text('Mock'),
+                ),
+                DropdownMenuItem(
+                  value: AiEngineMode.localGemma,
+                  child: Text('Local Gemma'),
+                ),
+                DropdownMenuItem(
+                  value: AiEngineMode.openAi,
+                  child: Text('OpenAI API'),
+                ),
+              ],
+              onChanged: (mode) {
+                if (mode != null) {
+                  onModeChanged(mode);
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              key: const Key('ai-settings-cloud-consent-switch'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('클라우드 AI 사용 동의'),
+              subtitle: const Text('OpenAI API 선택 시 스냅샷 이미지가 프록시 서버로 전송됩니다.'),
+              value: settings.allowCloudAnalysis,
+              onChanged: onCloudConsentChanged,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.link_outlined),
+              title: const Text('OpenAI 프록시 주소'),
+              subtitle: Text(settings.openAiProxyUrl ?? '설정되지 않음'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onOpenAiProxyTap,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.memory_outlined),
+              title: const Text('Local Gemma 상태'),
+              subtitle: Text(settings.localModelName ?? '앱 내부 런타임 연결 대기'),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cleaning_services_outlined),
+              title: const Text('AI 분석 결과 삭제'),
+              subtitle: const Text('후보 점수, 태그, 퍼스널 컬러 캐시 삭제'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onClearAiCache,
             ),
           ],
         ),
