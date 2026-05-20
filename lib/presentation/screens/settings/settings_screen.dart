@@ -13,6 +13,8 @@ import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
 import '../../widgets/app_top_bar.dart';
 
+enum _LocalGemmaModelAction { openDownload, importModel }
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -59,18 +61,21 @@ class SettingsScreen extends ConsumerWidget {
     WidgetRef ref,
     String? currentValue,
   ) async {
-    final controller = TextEditingController(text: currentValue ?? '');
+    final messenger = ScaffoldMessenger.of(context);
+    var nextValue = currentValue ?? '';
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('OpenAI 프록시 주소'),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          key: const Key('ai-settings-openai-proxy-url-field'),
+          initialValue: nextValue,
           decoration: const InputDecoration(
             labelText: '프록시 URL',
             hintText: 'https://example.com',
           ),
           keyboardType: TextInputType.url,
+          onChanged: (value) => nextValue = value,
         ),
         actions: [
           TextButton(
@@ -78,86 +83,124 @@ class SettingsScreen extends ConsumerWidget {
             child: const Text('취소'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
+            onPressed: () => Navigator.pop(context, nextValue),
             child: const Text('저장'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (value == null) {
       return;
     }
-    await ref.read(aiSettingsProvider.notifier).setOpenAiProxyUrl(value);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('OpenAI 프록시 주소를 저장했습니다.')),
+    try {
+      await ref.read(aiSettingsProvider.notifier).setOpenAiProxyUrl(value);
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('OpenAI 프록시 주소를 저장하지 못했습니다: $error')),
       );
+      return;
     }
+    messenger.showSnackBar(
+      const SnackBar(content: Text('OpenAI 프록시 주소를 저장했습니다.')),
+    );
   }
 
-  Future<void> _setLocalModelPath(
+  Future<void> _showLocalModelInfo(
     BuildContext context,
     WidgetRef ref,
     AiSettings settings,
   ) async {
-    final pathController = TextEditingController(
-      text: settings.localModelPath ?? '',
-    );
-    final nameController = TextEditingController(
-      text: settings.localModelName ?? '',
-    );
-    final saved = await showDialog<bool>(
+    final action = await showDialog<_LocalGemmaModelAction>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Local Gemma 모델'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '모델 이름',
-                hintText: 'Gemma 4 E4B-it',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (settings.localModelPath == null) ...[
+                const Text(
+                  '모델이 설정되지 않았습니다. 다운로드한 .litertlm 파일을 가져오면 FitFace가 앱 전용 저장소로 복사해 사용합니다.',
+                ),
+              ] else ...[
+                Text(
+                  settings.localModelName ?? 'Gemma 모델',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                SelectableText(settings.localModelPath!),
+              ],
+              const SizedBox(height: 16),
+              const Text('권장 모델 파일'),
+              const SizedBox(height: 4),
+              const SelectableText(
+                LocalGemmaModelService.recommendedModelFileName,
               ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: pathController,
-              decoration: const InputDecoration(
-                labelText: '모델 파일 경로',
-                hintText: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+              const SizedBox(height: 12),
+              const Text('다운로드 페이지'),
+              const SizedBox(height: 4),
+              const SelectableText(LocalGemmaModelService.modelDownloadUrl),
+              const SizedBox(height: 12),
+              const Text(
+                '-web.litertlm 또는 .task 파일이 아니라 Android 앱용 gemma-4-E4B-it.litertlm 파일을 선택하세요.',
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('취소'),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('닫기'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('저장'),
+            onPressed: () => Navigator.pop(
+              context,
+              _LocalGemmaModelAction.openDownload,
+            ),
+            child: const Text('다운로드 페이지'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              _LocalGemmaModelAction.importModel,
+            ),
+            child: Text(
+              settings.localModelPath == null ? '모델 파일 가져오기' : '모델 다시 가져오기',
+            ),
           ),
         ],
       ),
     );
-    final modelPath = pathController.text;
-    final modelName = nameController.text;
-    pathController.dispose();
-    nameController.dispose();
-    if (saved != true) {
+
+    if (!context.mounted || action == null) {
       return;
     }
-    await ref.read(aiSettingsProvider.notifier).setLocalModel(
-          path: modelPath,
-          name: modelName,
+
+    switch (action) {
+      case _LocalGemmaModelAction.openDownload:
+        await _openLocalModelDownloadPage(context, ref);
+      case _LocalGemmaModelAction.importModel:
+        await _importLocalModel(context, ref);
+    }
+  }
+
+  Future<void> _openLocalModelDownloadPage(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    try {
+      await ref.read(localGemmaModelServiceProvider).openDownloadPage();
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '다운로드 페이지를 열지 못했습니다: $error\n${LocalGemmaModelService.modelDownloadUrl}',
+            ),
+          ),
         );
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Local Gemma 모델 설정을 저장했습니다.')),
-      );
+      }
     }
   }
 
@@ -227,7 +270,7 @@ class SettingsScreen extends ConsumerWidget {
     final modelPath = settings.localModelPath;
     if (modelPath == null || modelPath.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Local Gemma 모델을 먼저 가져오거나 경로를 설정하세요.')),
+        const SnackBar(content: Text('Local Gemma 모델 파일을 먼저 가져오세요.')),
       );
       return;
     }
@@ -450,7 +493,7 @@ class SettingsScreen extends ConsumerWidget {
                 ref,
                 aiSettings.openAiProxyUrl,
               ),
-              onLocalModelTap: () => _setLocalModelPath(
+              onLocalModelTap: () => _showLocalModelInfo(
                 context,
                 ref,
                 aiSettings,
@@ -597,11 +640,11 @@ class _AiSettingsCard extends StatelessWidget {
               title: const Text('Local Gemma 상태'),
               subtitle: Text(
                 settings.localModelPath == null
-                    ? '모델 경로가 설정되지 않음'
+                    ? '모델이 설정되지 않았습니다\n다운로드 후 모델 파일 가져오기로 선택하세요'
                     : '${settings.localModelName ?? 'Gemma 모델'}\n${settings.localModelPath}',
               ),
-              isThreeLine: settings.localModelPath != null,
-              trailing: const Icon(Icons.chevron_right),
+              isThreeLine: true,
+              trailing: const Icon(Icons.info_outline),
               onTap: onLocalModelTap,
             ),
             Align(

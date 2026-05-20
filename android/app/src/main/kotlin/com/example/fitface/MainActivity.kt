@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "importModel" -> importModel(result)
+                "openUrl" -> openUrl(call.argument("url"), result)
                 "analyzeSnapshot" -> runInference(
                     prompt = call.argument("prompt"),
                     modelPath = call.argument("modelPath"),
@@ -73,6 +74,28 @@ class MainActivity : FlutterActivity() {
                 )
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun openUrl(url: String?, result: MethodChannel.Result) {
+        val normalizedUrl = url?.trim().orEmpty()
+        if (normalizedUrl.isEmpty()) {
+            result.error("OPEN_URL_INVALID_ARGUMENT", "URL is empty.", null)
+            return
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl)).apply {
+            addCategory(Intent.CATEGORY_BROWSABLE)
+        }
+        try {
+            startActivity(intent)
+            result.success(null)
+        } catch (error: Throwable) {
+            result.error(
+                "OPEN_URL_FAILED",
+                error.message ?: "Could not open URL.",
+                null
+            )
         }
     }
 

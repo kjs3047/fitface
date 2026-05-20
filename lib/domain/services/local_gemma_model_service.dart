@@ -37,6 +37,10 @@ class LocalGemmaModelService {
     MethodChannel channel = const MethodChannel('fitface/local_gemma'),
   }) : _channel = channel;
 
+  static const recommendedModelFileName = 'gemma-4-E4B-it.litertlm';
+  static const modelDownloadUrl =
+      'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/tree/main';
+
   final MethodChannel _channel;
 
   Future<LocalGemmaModelImport?> importModel() async {
@@ -47,6 +51,13 @@ class LocalGemmaModelService {
       return null;
     }
     return LocalGemmaModelImport.fromMap(imported);
+  }
+
+  Future<void> openDownloadPage() {
+    return _channel.invokeMethod<void>(
+      'openUrl',
+      {'url': modelDownloadUrl},
+    );
   }
 
   Future<LocalGemmaModelCheck> testModel({

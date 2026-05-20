@@ -53,6 +53,13 @@ void main() {
     );
   }
 
+  void useTallTestView(WidgetTester tester) {
+    tester.view.physicalSize = const Size(900, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   testWidgets('Onboarding shows required copy and register button',
       (tester) async {
     await tester.pumpWidget(wrap(const OnboardingScreen()));
@@ -406,6 +413,27 @@ void main() {
     expect(find.text('연결 테스트'), findsOneWidget);
     expect(find.text('모델 파일 가져오기'), findsOneWidget);
     expect(find.textContaining('기기 내부에만 저장'), findsOneWidget);
+  });
+
+  testWidgets('Local Gemma status guides import instead of manual path input',
+      (tester) async {
+    useTallTestView(tester);
+    await tester.pumpWidget(wrap(const SettingsScreen()));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.text('Local Gemma 상태'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Local Gemma 모델'), findsOneWidget);
+    expect(find.text('권장 모델 파일'), findsOneWidget);
+    expect(find.text('gemma-4-E4B-it.litertlm'), findsOneWidget);
+    expect(
+      find.textContaining('huggingface.co/litert-community'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(TextButton, '모델 파일 가져오기'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.byType(TextFormField), findsNothing);
   });
 
   testWidgets('FitFaceApp starts at splash', (tester) async {
