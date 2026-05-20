@@ -26,7 +26,7 @@ final aiAnalysisServiceProvider = Provider<AiAnalysisService>((ref) {
   return AiAnalysisCoordinator(
     settings: settings,
     featureExtractor: ref.watch(imageFeatureExtractorProvider),
-    localGemmaService: LocalGemmaAnalysisService(),
+    localGemmaService: LocalGemmaAnalysisService(settings: settings),
   );
 });
 

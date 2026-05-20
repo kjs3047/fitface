@@ -94,6 +94,71 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _setLocalModelPath(
+    BuildContext context,
+    WidgetRef ref,
+    AiSettings settings,
+  ) async {
+    final pathController = TextEditingController(
+      text: settings.localModelPath ?? '',
+    );
+    final nameController = TextEditingController(
+      text: settings.localModelName ?? '',
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Local Gemma 모델'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(
+                labelText: '모델 이름',
+                hintText: 'Gemma 4 E4B-it',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: pathController,
+              decoration: const InputDecoration(
+                labelText: '모델 파일 경로',
+                hintText: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    final modelPath = pathController.text;
+    final modelName = nameController.text;
+    pathController.dispose();
+    nameController.dispose();
+    if (saved != true) {
+      return;
+    }
+    await ref.read(aiSettingsProvider.notifier).setLocalModel(
+          path: modelPath,
+          name: modelName,
+        );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Local Gemma 모델 설정을 저장했습니다.')),
+      );
+    }
+  }
+
   Future<void> _clearAiCache(BuildContext context, WidgetRef ref) async {
     final confirmed = await _confirm(
       context,
@@ -250,6 +315,11 @@ class SettingsScreen extends ConsumerWidget {
                 ref,
                 aiSettings.openAiProxyUrl,
               ),
+              onLocalModelTap: () => _setLocalModelPath(
+                context,
+                ref,
+                aiSettings,
+              ),
               onClearAiCache: () => _clearAiCache(context, ref),
             ),
             const SizedBox(height: 12),
@@ -288,6 +358,7 @@ class _AiSettingsCard extends StatelessWidget {
     required this.onModeChanged,
     required this.onCloudConsentChanged,
     required this.onOpenAiProxyTap,
+    required this.onLocalModelTap,
     required this.onClearAiCache,
   });
 
@@ -296,6 +367,7 @@ class _AiSettingsCard extends StatelessWidget {
   final ValueChanged<AiEngineMode> onModeChanged;
   final ValueChanged<bool> onCloudConsentChanged;
   final VoidCallback onOpenAiProxyTap;
+  final VoidCallback onLocalModelTap;
   final VoidCallback onClearAiCache;
 
   @override
@@ -378,7 +450,14 @@ class _AiSettingsCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.memory_outlined),
               title: const Text('Local Gemma 상태'),
-              subtitle: Text(settings.localModelName ?? '앱 내부 런타임 연결 대기'),
+              subtitle: Text(
+                settings.localModelPath == null
+                    ? '모델 경로가 설정되지 않음'
+                    : '${settings.localModelName ?? 'Gemma 모델'}\n${settings.localModelPath}',
+              ),
+              isThreeLine: settings.localModelPath != null,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onLocalModelTap,
             ),
             const Divider(height: 1),
             ListTile(

@@ -1,5 +1,5 @@
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
@@ -10,14 +10,18 @@ import 'package:fitface/domain/services/ai_analysis_coordinator.dart';
 import 'package:fitface/domain/services/ai_engine_adapter.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
+import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
 import 'package:fitface/providers/camera_overlay_provider.dart';
 import 'package:fitface/providers/storage_provider.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('FaceNeckCutoutService creates transparent PNG cutout', () async {
     final tempRoot = await Directory.systemTemp.createTemp('fitface_cutout_');
     addTearDown(() async {
@@ -152,6 +156,59 @@ void main() {
     expect(result.engine, 'localGemma');
     expect(result.analysisMode, 'featuresOnly');
     expect(result.tags, contains('fallback-text'));
+  });
+
+  test('LocalGemmaAnalysisService sends model settings to native channel',
+      () async {
+    const channel = MethodChannel('fitface/local_gemma_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return jsonEncode({
+        'score': 88,
+        'comment': 'Local Gemma 테스트 응답입니다.',
+        'tags': ['local'],
+      });
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaAnalysisService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+        localModelName: 'Gemma 4 E4B-it',
+      ),
+      channel: channel,
+    );
+
+    final result = await service.analyzeSnapshot(
+      AiSnapshotAnalysisRequest(
+        snapshot: OutfitSnapshot(
+          id: 'candidate',
+          imagePath: 'snapshot.png',
+          createdAt: DateTime(2026),
+        ),
+        prompt: '테스트 prompt',
+        includeImage: true,
+      ),
+    );
+
+    expect(result.engine, 'localGemma');
+    expect(result.analysisMode, 'imageAndFeatures');
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'analyzeSnapshot');
+    final arguments = calls.single.arguments as Map<Object?, Object?>;
+    expect(
+      arguments['modelPath'],
+      '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+    );
+    expect(arguments['modelName'], 'Gemma 4 E4B-it');
+    expect(arguments['imagePath'], 'snapshot.png');
+    expect(arguments['prompt'], '테스트 prompt');
   });
 
   test('CameraOverlayProvider clamps opacity and scale', () async {

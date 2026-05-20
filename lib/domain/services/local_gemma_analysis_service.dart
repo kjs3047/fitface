@@ -3,13 +3,17 @@ import 'dart:convert';
 import 'package:flutter/services.dart';
 
 import '../../data/models/ai_analysis_result.dart';
+import '../../data/models/ai_settings.dart';
 import 'ai_engine_adapter.dart';
 
 class LocalGemmaAnalysisService implements AiEngineAdapter {
   LocalGemmaAnalysisService({
+    required AiSettings settings,
     MethodChannel? channel,
-  }) : _channel = channel ?? const MethodChannel('fitface/local_gemma');
+  })  : _settings = settings,
+        _channel = channel ?? const MethodChannel('fitface/local_gemma');
 
+  final AiSettings _settings;
   final MethodChannel _channel;
 
   @override
@@ -22,6 +26,8 @@ class LocalGemmaAnalysisService implements AiEngineAdapter {
     final response = await _channel.invokeMethod<String>(
       request.includeImage ? 'analyzeSnapshot' : 'analyzeText',
       {
+        'modelPath': _settings.localModelPath,
+        'modelName': _settings.localModelName,
         'imagePath': request.includeImage ? request.snapshot.imagePath : null,
         'prompt': request.prompt,
         'features': request.features?.toJson(),
@@ -37,6 +43,8 @@ class LocalGemmaAnalysisService implements AiEngineAdapter {
     final response = await _channel.invokeMethod<String>(
       request.includeImages ? 'compareSnapshots' : 'compareText',
       {
+        'modelPath': _settings.localModelPath,
+        'modelName': _settings.localModelName,
         'imagePaths': request.includeImages
             ? request.snapshots.map((snapshot) => snapshot.imagePath).toList()
             : const <String>[],
