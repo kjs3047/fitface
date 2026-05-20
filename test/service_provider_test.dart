@@ -11,6 +11,7 @@ import 'package:fitface/core/utils/face_cutout_geometry.dart';
 import 'package:fitface/domain/services/ai_analysis_coordinator.dart';
 import 'package:fitface/domain/services/ai_engine_adapter.dart';
 import 'package:fitface/domain/services/ai_personal_color_service.dart';
+import 'package:fitface/domain/services/face_image_quality_service.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
@@ -129,6 +130,31 @@ void main() {
     expect(features.brightness, greaterThan(0));
     expect(features.saturation, greaterThan(0));
     expect(features.toPromptText(), contains('dominant'));
+  });
+
+  test('FaceImageQualityService reports low quality hints', () async {
+    final tempRoot = await Directory.systemTemp.createTemp('fitface_quality_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 80, height: 112);
+    img.fill(source, color: img.ColorRgb8(34, 34, 38));
+    final sourceFile = File('${tempRoot.path}/face.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+
+    final result = await const FaceImageQualityService().evaluate(
+      sourceFile.path,
+    );
+
+    expect(result.status, FaceImageQualityStatus.warning);
+    expect(result.hasWarnings, isTrue);
+    expect(result.hints.join(' '), contains('어두'));
+    expect(result.features.averageHex, startsWith('#'));
   });
 
   test('AiAnalysisCoordinator falls back from vision to text features',

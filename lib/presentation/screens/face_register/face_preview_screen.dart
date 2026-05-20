@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/services/face_image_quality_service.dart';
 import '../../../providers/camera_overlay_provider.dart';
 import '../../../providers/repository_provider.dart';
 import '../../../providers/service_provider.dart';
@@ -30,6 +31,8 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
   bool _isPreparing = true;
   String? _overlayPath;
   String? _prepareError;
+  FaceImageQualityResult? _qualityResult;
+  String? _qualityError;
 
   @override
   void initState() {
@@ -41,16 +44,29 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
     setState(() {
       _isPreparing = true;
       _prepareError = null;
+      _qualityResult = null;
+      _qualityError = null;
     });
     try {
       final overlayPath = await ref
           .read(backgroundRemovalServiceProvider)
           .removeBackground(widget.args.croppedImagePath);
+      FaceImageQualityResult? qualityResult;
+      String? qualityError;
+      try {
+        qualityResult = await ref
+            .read(faceImageQualityServiceProvider)
+            .evaluate(widget.args.croppedImagePath);
+      } catch (error) {
+        qualityError = error.toString();
+      }
       if (!mounted) {
         return;
       }
       setState(() {
         _overlayPath = overlayPath;
+        _qualityResult = qualityResult;
+        _qualityError = qualityError;
         _isPreparing = false;
       });
     } catch (error) {
@@ -144,6 +160,11 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
                         '자르기 화면의 실루엣 기준으로 얼굴과 목 중심부만 남긴 누끼 결과입니다.',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      const SizedBox(height: 10),
+                      _FaceQualityPanel(
+                        result: _qualityResult,
+                        error: _qualityError,
+                      ),
                       const SizedBox(height: 12),
                       PrimaryButton(
                         label: _isPreparing
@@ -217,6 +238,99 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
       child: Image.file(
         File(overlayPath),
         fit: BoxFit.contain,
+      ),
+    );
+  }
+}
+
+class _FaceQualityPanel extends StatelessWidget {
+  const _FaceQualityPanel({
+    required this.result,
+    required this.error,
+  });
+
+  final FaceImageQualityResult? result;
+  final String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = this.error;
+    if (error != null) {
+      return _QualityBox(
+        icon: Icons.info_outline,
+        title: '사진 품질 확인 제한',
+        lines: const ['품질 정보를 읽지 못했지만 사진 저장은 계속 가능합니다.'],
+        color: Theme.of(context).colorScheme.error,
+      );
+    }
+    final result = this.result;
+    if (result == null) {
+      return const _QualityBox(
+        icon: Icons.hourglass_empty,
+        title: '사진 품질 확인 중',
+        lines: ['밝기, 대비, 색조명 영향을 확인하고 있습니다.'],
+        color: AppTheme.mutedInk,
+      );
+    }
+    final hasWarnings = result.hasWarnings;
+    return _QualityBox(
+      icon: hasWarnings ? Icons.warning_amber_outlined : Icons.task_alt,
+      title: hasWarnings ? '사진 품질 참고' : '사진 품질 양호',
+      lines: hasWarnings ? result.hints : [result.summary],
+      color: hasWarnings ? AppTheme.bronze : const Color(0xFF2F7D32),
+    );
+  }
+}
+
+class _QualityBox extends StatelessWidget {
+  const _QualityBox({
+    required this.icon,
+    required this.title,
+    required this.lines,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<String> lines;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: color,
+                        ),
+                  ),
+                  const SizedBox(height: 4),
+                  for (final line in lines.take(3))
+                    Text(
+                      line,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -5,6 +5,7 @@ import '../domain/services/ai_analysis_coordinator.dart';
 import '../domain/services/ai_analysis_service.dart';
 import '../domain/services/ai_personal_color_service.dart';
 import '../domain/services/background_removal_service.dart';
+import '../domain/services/face_image_quality_service.dart';
 import '../domain/services/face_neck_cutout_service.dart';
 import '../domain/services/image_feature_extractor.dart';
 import '../domain/services/local_gemma_analysis_service.dart';
@@ -19,6 +20,13 @@ final backgroundRemovalServiceProvider =
 
 final imageFeatureExtractorProvider = Provider<ImageFeatureExtractor>((ref) {
   return const ImageFeatureExtractor();
+});
+
+final faceImageQualityServiceProvider =
+    Provider<FaceImageQualityService>((ref) {
+  return FaceImageQualityService(
+    featureExtractor: ref.watch(imageFeatureExtractorProvider),
+  );
 });
 
 final localGemmaModelServiceProvider = Provider<LocalGemmaModelService>((ref) {

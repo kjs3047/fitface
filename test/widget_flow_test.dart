@@ -3,17 +3,22 @@ import 'dart:io';
 import 'package:fitface/app.dart';
 import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
+import 'package:fitface/data/models/image_feature_summary.dart';
 import 'package:fitface/data/models/outfit_snapshot.dart';
 import 'package:fitface/data/models/personal_color_result.dart';
 import 'package:fitface/data/repositories/snapshot_repository.dart';
 import 'package:fitface/data/repositories/user_profile_repository.dart';
 import 'package:fitface/domain/services/ai_analysis_service.dart';
+import 'package:fitface/domain/services/background_removal_service.dart';
+import 'package:fitface/domain/services/face_image_quality_service.dart';
 import 'package:fitface/presentation/screens/compare/compare_screen.dart';
 import 'package:fitface/presentation/screens/compare/snapshot_image_viewer_screen.dart';
 import 'package:fitface/presentation/screens/face_register/face_capture_screen.dart';
+import 'package:fitface/presentation/screens/face_register/face_preview_screen.dart';
 import 'package:fitface/presentation/screens/face_register/face_register_screen.dart';
 import 'package:fitface/presentation/screens/onboarding/onboarding_screen.dart';
 import 'package:fitface/presentation/screens/settings/settings_screen.dart';
+import 'package:fitface/presentation/routes/app_routes.dart';
 import 'package:fitface/presentation/widgets/personal_color_result_card.dart';
 import 'package:fitface/providers/repository_provider.dart';
 import 'package:fitface/providers/service_provider.dart';
@@ -21,6 +26,7 @@ import 'package:fitface/providers/storage_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   late Directory tempRoot;
@@ -102,6 +108,44 @@ void main() {
     expect(find.text('얼굴 촬영'), findsOneWidget);
     expect(find.byKey(const Key('face-capture-cutout-guide')), findsOneWidget);
     expect(find.textContaining('실루엣 선'), findsOneWidget);
+  });
+
+  testWidgets('FacePreview shows face image quality guidance', (tester) async {
+    final sourceFile = File('${tempRoot.path}/face.png');
+    await tester.runAsync(() async {
+      final source = img.Image(width: 80, height: 112);
+      img.fill(source, color: img.ColorRgb8(34, 34, 38));
+      await sourceFile.writeAsBytes(img.encodePng(source), flush: true);
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          localFileStorageProvider.overrideWithValue(storage),
+          backgroundRemovalServiceProvider.overrideWithValue(
+            const _ImmediateBackgroundRemovalService(),
+          ),
+          faceImageQualityServiceProvider.overrideWithValue(
+            const _WarningFaceImageQualityService(),
+          ),
+        ],
+        child: MaterialApp(
+          home: FacePreviewScreen(
+            args: FacePreviewArgs(
+              originalImagePath: sourceFile.path,
+              croppedImagePath: sourceFile.path,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+
+    expect(find.text('사진 품질 참고'), findsOneWidget);
+    expect(find.textContaining('어두'), findsWidgets);
   });
 
   testWidgets('Compare screen shows three empty slots', (tester) async {
@@ -305,6 +349,36 @@ class _BestSecondCandidateAiService implements AiAnalysisService {
         'candidate_2': 69,
       },
       comment: '두 번째 후보가 가장 안정적으로 어울리고 색 조화 기준에서도 우세합니다.',
+    );
+  }
+}
+
+class _ImmediateBackgroundRemovalService implements BackgroundRemovalService {
+  const _ImmediateBackgroundRemovalService();
+
+  @override
+  Future<String> removeBackground(String inputImagePath) async {
+    return inputImagePath;
+  }
+}
+
+class _WarningFaceImageQualityService extends FaceImageQualityService {
+  const _WarningFaceImageQualityService();
+
+  @override
+  Future<FaceImageQualityResult> evaluate(String imagePath) async {
+    return const FaceImageQualityResult(
+      status: FaceImageQualityStatus.warning,
+      summary: '사진은 사용할 수 있습니다.',
+      hints: ['얼굴 이미지가 어두워 AI 분석 신뢰도가 낮아질 수 있습니다.'],
+      features: ImageFeatureSummary(
+        averageHex: '#222226',
+        dominantColors: [ColorSwatchSummary(hex: '#303030', ratio: 1)],
+        brightness: 0.12,
+        contrast: 0.02,
+        saturation: 0.04,
+        warmCoolBias: -0.02,
+      ),
     );
   }
 }
