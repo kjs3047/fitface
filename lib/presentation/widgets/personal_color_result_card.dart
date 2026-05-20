@@ -75,7 +75,7 @@ class _RecommendedTreemap extends StatelessWidget {
         Text('추천 색상 조합', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
         SizedBox(
-          height: 176,
+          height: 192,
           child: supporting.isEmpty
               ? _TreemapTile(
                   key: const Key('personal-color-signature-tile'),
@@ -143,57 +143,92 @@ class _TreemapTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = _foregroundForColor(swatch.color);
     final labelBackground = foreground.withValues(alpha: 0.12);
+    final padding = isSignature ? 13.0 : 8.0;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: swatch.color,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.ink.withValues(alpha: 0.12)),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(isSignature ? 13 : 9),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: labelBackground,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isSignature ? 8 : 6,
-                  vertical: isSignature ? 5 : 3,
-                ),
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: foreground,
-                      ),
-                ),
-              ),
-            ),
-            const Spacer(),
-            Text(
-              swatch.name,
-              maxLines: isSignature ? 2 : 1,
-              overflow: TextOverflow.ellipsis,
-              style: (isSignature
-                      ? Theme.of(context).textTheme.titleLarge
-                      : Theme.of(context).textTheme.labelLarge)
-                  ?.copyWith(color: foreground),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              swatch.hex,
-              key: Key('personal-color-treemap-code-${swatch.name}'),
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: foreground.withValues(alpha: 0.76),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentWidth = (constraints.maxWidth - padding * 2)
+            .clamp(1.0, double.infinity)
+            .toDouble();
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: swatch.color,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.ink.withValues(alpha: 0.12)),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(padding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: labelBackground,
+                    borderRadius: BorderRadius.circular(999),
                   ),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isSignature ? 8 : 6,
+                      vertical: isSignature ? 5 : 3,
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: foreground,
+                          ),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.bottomLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.bottomLeft,
+                      child: SizedBox(
+                        width: contentWidth,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              swatch.name,
+                              maxLines: isSignature ? 2 : 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: (isSignature
+                                      ? Theme.of(context).textTheme.titleLarge
+                                      : Theme.of(context).textTheme.labelLarge)
+                                  ?.copyWith(color: foreground),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              swatch.hex,
+                              key: Key(
+                                'personal-color-treemap-code-${swatch.name}',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(
+                                    color: foreground.withValues(alpha: 0.76),
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

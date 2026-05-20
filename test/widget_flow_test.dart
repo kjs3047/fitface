@@ -299,6 +299,57 @@ void main() {
     );
   });
 
+  testWidgets('PersonalColorResultCard handles large text without overflow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            textScaler: TextScaler.linear(1.45),
+          ),
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: SizedBox(
+                width: 360,
+                child: PersonalColorResultCard(
+                  result: PersonalColorResult(
+                    type: '뉴트럴-딥(소프트)',
+                    recommendedColors: [
+                      '네이비',
+                      '차콜 그레이',
+                      '딥 틸',
+                      '웜 그레이시 베이지',
+                      '버건디',
+                    ],
+                    avoidColors: [
+                      '형광 노랑',
+                      '선명한 오렌지',
+                      '과한 베이지',
+                      '탁한 갈색',
+                      '연한 파스텔 핑크',
+                    ],
+                    comment: '테스트 결과',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const Key('personal-color-treemap-tile-2')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('personal-color-treemap-tile-3')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('Settings screen exposes privacy and reset actions',
       (tester) async {
     await tester.pumpWidget(wrap(const SettingsScreen()));
