@@ -214,7 +214,11 @@ class FitFaceOpenAiProxy {
         content: content,
       ),
     );
-    return {'result': _decodeStructuredResult(openAiResponse)};
+    return {
+      'result': _normalizeSnapshotResult(
+        _decodeStructuredResult(openAiResponse),
+      ),
+    };
   }
 
   Future<Map<String, dynamic>> _compareSnapshots(
@@ -255,7 +259,11 @@ class FitFaceOpenAiProxy {
         content: content,
       ),
     );
-    return {'result': _decodeStructuredResult(openAiResponse)};
+    return {
+      'result': _normalizeSnapshotResult(
+        _decodeStructuredResult(openAiResponse),
+      ),
+    };
   }
 
   Future<Map<String, dynamic>> _analyzePersonalColor(
@@ -335,13 +343,18 @@ class FitFaceOpenAiProxy {
         'bestSnapshotId': {
           'type': ['string', 'null'],
         },
-        'candidateScores': {
-          'type': 'object',
-          'additionalProperties': {'type': 'integer'},
-        },
-        'candidateComments': {
-          'type': 'object',
-          'additionalProperties': {'type': 'string'},
+        'candidateResults': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'additionalProperties': false,
+            'properties': {
+              'snapshotId': {'type': 'string'},
+              'score': {'type': 'integer', 'minimum': 0, 'maximum': 100},
+              'comment': {'type': 'string'},
+            },
+            'required': ['snapshotId', 'score', 'comment'],
+          },
         },
         'tags': _stringArraySchema(),
         'strengths': _stringArraySchema(),
@@ -353,8 +366,7 @@ class FitFaceOpenAiProxy {
         'score',
         'comment',
         'bestSnapshotId',
-        'candidateScores',
-        'candidateComments',
+        'candidateResults',
         'tags',
         'strengths',
         'concerns',
@@ -412,6 +424,39 @@ class FitFaceOpenAiProxy {
       'OpenAI response did not contain output text.',
       HttpStatus.badGateway,
     );
+  }
+
+  Map<String, dynamic> _normalizeSnapshotResult(Map<String, dynamic> result) {
+    final candidateResults =
+        (result['candidateResults'] as List<dynamic>?) ?? const [];
+    if (candidateResults.isEmpty) {
+      return result
+        ..putIfAbsent('candidateScores', () => <String, int>{})
+        ..putIfAbsent('candidateComments', () => <String, String>{})
+        ..remove('candidateResults');
+    }
+
+    final candidateScores = <String, int>{};
+    final candidateComments = <String, String>{};
+    for (final item in candidateResults.whereType<Map<String, dynamic>>()) {
+      final snapshotId = item['snapshotId'] as String?;
+      final score = item['score'];
+      final comment = item['comment'] as String?;
+      if (snapshotId == null || snapshotId.isEmpty) {
+        continue;
+      }
+      if (score is num) {
+        candidateScores[snapshotId] = score.round();
+      }
+      if (comment != null && comment.isNotEmpty) {
+        candidateComments[snapshotId] = comment;
+      }
+    }
+    return {
+      ...result,
+      'candidateScores': candidateScores,
+      'candidateComments': candidateComments,
+    }..remove('candidateResults');
   }
 
   void _addImageIfPresent(

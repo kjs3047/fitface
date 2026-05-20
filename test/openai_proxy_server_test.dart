@@ -65,8 +65,18 @@ void main() {
           'score': 88,
           'comment': '두 번째 후보가 가장 안정적입니다.',
           'bestSnapshotId': 'snapshot_2',
-          'candidateScores': {'snapshot_1': 72, 'snapshot_2': 88},
-          'candidateComments': {'snapshot_2': '대비와 색감이 안정적입니다.'},
+          'candidateResults': [
+            {
+              'snapshotId': 'snapshot_1',
+              'score': 72,
+              'comment': '조명 대비가 조금 약합니다.',
+            },
+            {
+              'snapshotId': 'snapshot_2',
+              'score': 88,
+              'comment': '대비와 색감이 안정적입니다.',
+            },
+          ],
           'tags': ['BEST'],
           'strengths': ['비교 결과가 명확합니다.'],
           'concerns': <String>[],
@@ -101,6 +111,14 @@ void main() {
     });
 
     expect((response['result'] as Map)['bestSnapshotId'], 'snapshot_2');
+    expect(
+      ((response['result'] as Map)['candidateScores'] as Map)['snapshot_2'],
+      88,
+    );
+    expect(
+      ((response['result'] as Map)['candidateComments'] as Map)['snapshot_2'],
+      '대비와 색감이 안정적입니다.',
+    );
     final user = (captured['input'] as List)[1] as Map;
     final content = user['content'] as List;
     expect(
@@ -111,6 +129,11 @@ void main() {
       (((captured['text'] as Map)['format'] as Map)['name']),
       'fitface_snapshot_compare',
     );
+    final schema = (((captured['text'] as Map)['format'] as Map)['schema']
+        as Map<String, dynamic>);
+    final properties = schema['properties'] as Map<String, dynamic>;
+    expect(properties.containsKey('candidateResults'), isTrue);
+    expect(properties.containsKey('candidateScores'), isFalse);
   });
 
   test('personal color endpoint supports features-only requests', () async {
