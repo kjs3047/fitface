@@ -224,6 +224,12 @@ FitFace
 → FitFace
 ```
 
+현재 repo에는 개발/검증용 Dart 프록시가 포함된다.
+
+```text
+dart run bin/fitface_openai_proxy.dart
+```
+
 백엔드 책임:
 
 - OpenAI API key 보관
