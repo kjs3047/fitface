@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/ai_settings.dart';
+import '../../../domain/services/local_gemma_model_service.dart';
 import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/repository_provider.dart';
 import '../../../providers/service_provider.dart';
@@ -218,6 +219,69 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _testLocalModel(
+    BuildContext context,
+    WidgetRef ref,
+    AiSettings settings,
+  ) async {
+    final modelPath = settings.localModelPath;
+    if (modelPath == null || modelPath.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Local Gemma 모델을 먼저 가져오거나 경로를 설정하세요.')),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('Local Gemma 모델을 테스트하는 중입니다.')),
+          ],
+        ),
+      ),
+    );
+
+    Object? error;
+    LocalGemmaModelCheck? check;
+    try {
+      check = await ref.read(localGemmaModelServiceProvider).testModel(
+            modelPath: modelPath,
+            modelName: settings.localModelName,
+          );
+    } catch (caught) {
+      error = caught;
+    }
+
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Local Gemma 연결 테스트 실패: $error')),
+      );
+      return;
+    }
+    if (check == null) {
+      return;
+    }
+
+    final score = check.score == null ? '' : ' (${check.score}/100)';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Local Gemma 연결 테스트 성공$score: ${check.message}')),
+    );
+  }
+
   Future<void> _clearAiCache(BuildContext context, WidgetRef ref) async {
     final confirmed = await _confirm(
       context,
@@ -392,6 +456,11 @@ class SettingsScreen extends ConsumerWidget {
                 aiSettings,
               ),
               onLocalModelImport: () => _importLocalModel(context, ref),
+              onLocalModelTest: () => _testLocalModel(
+                context,
+                ref,
+                aiSettings,
+              ),
               onClearAiCache: () => _clearAiCache(context, ref),
             ),
             const SizedBox(height: 12),
@@ -432,6 +501,7 @@ class _AiSettingsCard extends StatelessWidget {
     required this.onOpenAiProxyTap,
     required this.onLocalModelTap,
     required this.onLocalModelImport,
+    required this.onLocalModelTest,
     required this.onClearAiCache,
   });
 
@@ -442,6 +512,7 @@ class _AiSettingsCard extends StatelessWidget {
   final VoidCallback onOpenAiProxyTap;
   final VoidCallback onLocalModelTap;
   final VoidCallback onLocalModelImport;
+  final VoidCallback onLocalModelTest;
   final VoidCallback onClearAiCache;
 
   @override
@@ -535,11 +606,24 @@ class _AiSettingsCard extends StatelessWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                key: const Key('ai-settings-import-local-model-button'),
-                onPressed: onLocalModelImport,
-                icon: const Icon(Icons.upload_file_outlined),
-                label: const Text('모델 파일 가져오기'),
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    key: const Key('ai-settings-test-local-model-button'),
+                    onPressed: onLocalModelTest,
+                    icon: const Icon(Icons.task_alt_outlined),
+                    label: const Text('연결 테스트'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('ai-settings-import-local-model-button'),
+                    onPressed: onLocalModelImport,
+                    icon: const Icon(Icons.upload_file_outlined),
+                    label: const Text('모델 파일 가져오기'),
+                  ),
+                ],
               ),
             ),
             const Divider(height: 1),

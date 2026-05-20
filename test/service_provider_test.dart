@@ -248,6 +248,42 @@ void main() {
     expect(imported.bytes, 3456789012);
   });
 
+  test('LocalGemmaModelService runs text-only diagnostic request', () async {
+    const channel = MethodChannel('fitface/local_gemma_diagnostic_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return jsonEncode({
+        'score': 91,
+        'comment': 'Local Gemma 연결 테스트가 완료되었습니다.',
+        'tags': ['diagnostic'],
+      });
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    const service = LocalGemmaModelService(channel: channel);
+    final check = await service.testModel(
+      modelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+      modelName: 'Gemma 4 E4B-it',
+    );
+
+    expect(check.score, 91);
+    expect(check.message, contains('완료'));
+    expect(calls.single.method, 'analyzeText');
+    final arguments = calls.single.arguments as Map<Object?, Object?>;
+    expect(
+      arguments['modelPath'],
+      '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+    );
+    expect(arguments['modelName'], 'Gemma 4 E4B-it');
+    expect(arguments['prompt'], contains('JSON'));
+    expect(arguments['features'], isA<Map>());
+  });
+
   test('OpenAiAnalysisService posts sanitized snapshot image to proxy',
       () async {
     final tempRoot =

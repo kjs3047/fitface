@@ -262,6 +262,7 @@ void main() {
     expect(find.text('얼굴 사진 변경'), findsOneWidget);
     expect(find.text('저장된 후보 전체 삭제'), findsOneWidget);
     expect(find.text('앱 데이터 초기화'), findsOneWidget);
+    expect(find.text('연결 테스트'), findsOneWidget);
     expect(find.text('모델 파일 가져오기'), findsOneWidget);
     expect(find.textContaining('기기 내부에만 저장'), findsOneWidget);
   });
