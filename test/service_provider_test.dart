@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,14 +6,19 @@ import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
 import 'package:fitface/data/models/ai_settings.dart';
 import 'package:fitface/data/models/outfit_snapshot.dart';
+import 'package:fitface/data/models/personal_color_result.dart';
 import 'package:fitface/core/utils/face_cutout_geometry.dart';
 import 'package:fitface/domain/services/ai_analysis_coordinator.dart';
 import 'package:fitface/domain/services/ai_engine_adapter.dart';
+import 'package:fitface/domain/services/ai_personal_color_service.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
+import 'package:fitface/domain/services/local_gemma_personal_color_service.dart';
 import 'package:fitface/domain/services/local_gemma_model_service.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
+import 'package:fitface/domain/services/open_ai_personal_color_service.dart';
+import 'package:fitface/domain/services/personal_color_engine_adapter.dart';
 import 'package:fitface/providers/camera_overlay_provider.dart';
 import 'package:fitface/providers/storage_provider.dart';
 import 'package:flutter/services.dart';
@@ -241,6 +247,136 @@ void main() {
     expect(imported.bytes, 3456789012);
   });
 
+  test('AiPersonalColorService falls back from vision to text features',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_personal_ai_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 80, height: 80);
+    img.fill(source, color: img.ColorRgb8(170, 190, 225));
+    final sourceFile = File('${tempRoot.path}/face.png');
+    await sourceFile.writeAsBytes(
+      img.encodePng(source),
+      flush: true,
+    );
+    final service = AiPersonalColorService(
+      settings: AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma),
+      featureExtractor: const ImageFeatureExtractor(),
+      localGemmaService: const _PersonalColorVisionFailsTextSucceedsEngine(),
+    );
+
+    final result = await service.analyze(faceImagePath: sourceFile.path);
+
+    expect(result.type, '여름 쿨');
+    expect(result.recommendedColors, contains('소프트 블루'));
+    expect(result.comment, contains('색상정보'));
+  });
+
+  test('LocalGemmaPersonalColorService sends model settings to native channel',
+      () async {
+    const channel = MethodChannel('fitface/local_gemma_personal_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return jsonEncode({
+        'type': '여름 쿨',
+        'recommendedColors': ['라벤더', '소프트 블루'],
+        'avoidColors': ['강한 오렌지'],
+        'comment': 'Local Gemma 퍼스널 컬러 테스트 응답입니다.',
+      });
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaPersonalColorService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+        localModelName: 'Gemma 4 E4B-it',
+      ),
+      channel: channel,
+    );
+
+    final result = await service.analyze(
+      const PersonalColorAnalysisRequest(
+        faceImagePath: 'face.png',
+        prompt: '퍼스널 컬러 prompt',
+        includeImage: true,
+      ),
+    );
+
+    expect(result.type, '여름 쿨');
+    expect(calls.single.method, 'analyzePersonalColor');
+    final arguments = calls.single.arguments as Map<Object?, Object?>;
+    expect(
+      arguments['modelPath'],
+      '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+    );
+    expect(arguments['modelName'], 'Gemma 4 E4B-it');
+    expect(arguments['imagePath'], 'face.png');
+    expect(arguments['prompt'], '퍼스널 컬러 prompt');
+  });
+
+  test('OpenAiPersonalColorService posts sanitized image to proxy', () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_openai_personal_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 24, height: 24);
+    img.fill(source, color: img.ColorRgb8(170, 190, 225));
+    final sourceFile = File('${tempRoot.path}/face.png');
+    await sourceFile.writeAsBytes(
+      img.encodePng(source),
+      flush: true,
+    );
+    Uri? capturedUri;
+    Map<String, dynamic>? capturedBody;
+    final service = OpenAiPersonalColorService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'https://fitface.example',
+      ),
+      client: _FakeHttpClient((uri, body) {
+        capturedUri = uri;
+        capturedBody = body;
+        return {
+          'result': {
+            'type': '여름 쿨',
+            'recommendedColors': ['라벤더', '소프트 블루'],
+            'avoidColors': ['강한 오렌지'],
+            'comment': 'OpenAI 프록시 테스트 응답입니다.',
+          },
+        };
+      }),
+    );
+
+    final result = await service.analyze(
+      PersonalColorAnalysisRequest(
+        faceImagePath: sourceFile.path,
+        prompt: '퍼스널 컬러 prompt',
+        includeImage: true,
+      ),
+    );
+
+    expect(capturedUri?.path, '/ai/personal-color');
+    expect(capturedBody?['imageBase64'], isA<String>());
+    expect(capturedBody?['imageMimeType'], 'image/jpeg');
+    expect(capturedBody?['mode'], 'imageAndFeatures');
+    expect(result.type, '여름 쿨');
+    expect(result.recommendedColors, contains('소프트 블루'));
+  });
+
   test('CameraOverlayProvider clamps opacity and scale', () async {
     final tempRoot = await Directory.systemTemp.createTemp('fitface_provider_');
     final storage = await LocalFileStorage.create(root: tempRoot);
@@ -263,6 +399,116 @@ void main() {
     expect(state.scale, 3.0);
     expect(state.position, const Offset(12, 18));
   });
+}
+
+class _PersonalColorVisionFailsTextSucceedsEngine
+    implements PersonalColorEngineAdapter {
+  const _PersonalColorVisionFailsTextSucceedsEngine();
+
+  @override
+  String get engineName => 'localGemma';
+
+  @override
+  Future<PersonalColorResult> analyze(
+    PersonalColorAnalysisRequest request,
+  ) async {
+    if (request.includeImage) {
+      throw StateError('vision unavailable');
+    }
+    return const PersonalColorResult(
+      type: '여름 쿨',
+      recommendedColors: ['라벤더', '소프트 블루'],
+      avoidColors: ['강한 오렌지'],
+      comment: '색상정보 기반 퍼스널 컬러 분석입니다.',
+    );
+  }
+}
+
+class _FakeHttpClient extends Fake implements HttpClient {
+  _FakeHttpClient(this.handler);
+
+  final Map<String, dynamic> Function(
+    Uri uri,
+    Map<String, dynamic> body,
+  ) handler;
+
+  @override
+  Future<HttpClientRequest> postUrl(Uri url) async {
+    return _FakeHttpClientRequest(url, handler);
+  }
+}
+
+class _FakeHttpClientRequest extends Fake implements HttpClientRequest {
+  _FakeHttpClientRequest(this.uri, this.handler);
+
+  @override
+  final Uri uri;
+  final Map<String, dynamic> Function(
+    Uri uri,
+    Map<String, dynamic> body,
+  ) handler;
+  final _FakeHttpHeaders _headers = _FakeHttpHeaders();
+  final StringBuffer _body = StringBuffer();
+
+  @override
+  HttpHeaders get headers => _headers;
+
+  @override
+  void write(Object? object) {
+    _body.write(object);
+  }
+
+  @override
+  Future<HttpClientResponse> close() async {
+    final body = jsonDecode(_body.toString()) as Map<String, dynamic>;
+    return _FakeHttpClientResponse(
+      statusCode: HttpStatus.ok,
+      body: jsonEncode(handler(uri, body)),
+    );
+  }
+}
+
+class _FakeHttpHeaders extends Fake implements HttpHeaders {
+  ContentType? _contentType;
+
+  @override
+  ContentType? get contentType => _contentType;
+
+  @override
+  set contentType(ContentType? contentType) {
+    _contentType = contentType;
+  }
+}
+
+class _FakeHttpClientResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  _FakeHttpClientResponse({
+    required this.statusCode,
+    required String body,
+  }) : _bytes = utf8.encode(body);
+
+  @override
+  final int statusCode;
+
+  final List<int> _bytes;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    return Stream<List<int>>.value(_bytes).listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _VisionFailsTextSucceedsEngine implements AiEngineAdapter {

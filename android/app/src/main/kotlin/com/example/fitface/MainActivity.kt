@@ -57,6 +57,20 @@ class MainActivity : FlutterActivity() {
                     includeImages = false,
                     result = result
                 )
+                "analyzePersonalColor" -> runInference(
+                    prompt = call.argument("prompt"),
+                    modelPath = call.argument("modelPath"),
+                    imagePaths = listOfNotNull(call.argument("imagePath")),
+                    includeImages = true,
+                    result = result
+                )
+                "analyzePersonalColorText" -> runInference(
+                    prompt = call.argument("prompt"),
+                    modelPath = call.argument("modelPath"),
+                    imagePaths = emptyList(),
+                    includeImages = false,
+                    result = result
+                )
                 else -> result.notImplemented()
             }
         }
