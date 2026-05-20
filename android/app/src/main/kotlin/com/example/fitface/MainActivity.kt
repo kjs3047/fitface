@@ -1,7 +1,11 @@
 package com.example.fitface
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
@@ -21,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private var loadedModelPath: String? = null
     private var loadedWithVision = false
     private var engine: Engine? = null
+    private var pendingImportResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -29,6 +34,7 @@ class MainActivity : FlutterActivity() {
             "fitface/local_gemma"
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "importModel" -> importModel(result)
                 "analyzeSnapshot" -> runInference(
                     prompt = call.argument("prompt"),
                     modelPath = call.argument("modelPath"),
@@ -56,10 +62,150 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_IMPORT_MODEL) {
+            return
+        }
+
+        val result = pendingImportResult ?: return
+        pendingImportResult = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+
+        executor.execute {
+            try {
+                val imported = copyModelToAppStorage(uri)
+                mainHandler.post { result.success(imported) }
+            } catch (error: Throwable) {
+                mainHandler.post {
+                    result.error(
+                        "LOCAL_GEMMA_IMPORT_FAILED",
+                        error.message ?: "Local Gemma model import failed.",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
         executor.execute { closeEngine() }
         executor.shutdown()
         super.onDestroy()
+    }
+
+    private fun importModel(result: MethodChannel.Result) {
+        if (pendingImportResult != null) {
+            result.error(
+                "LOCAL_GEMMA_IMPORT_ACTIVE",
+                "A Local Gemma model import is already in progress.",
+                null
+            )
+            return
+        }
+
+        pendingImportResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                arrayOf(
+                    "application/octet-stream",
+                    "application/x-litertlm",
+                    "application/vnd.litertlm"
+                )
+            )
+        }
+        try {
+            startActivityForResult(intent, REQUEST_IMPORT_MODEL)
+        } catch (error: Throwable) {
+            pendingImportResult = null
+            result.error(
+                "LOCAL_GEMMA_IMPORT_UNAVAILABLE",
+                error.message ?: "Android document picker is unavailable.",
+                null
+            )
+        }
+    }
+
+    private fun copyModelToAppStorage(uri: Uri): Map<String, Any> {
+        val displayName = queryDisplayName(uri)
+        val safeFileName = sanitizeFileName(displayName)
+        val modelDir = getExternalFilesDir("models") ?: File(filesDir, "models")
+        if (!modelDir.exists() && !modelDir.mkdirs()) {
+            throw IllegalStateException("Could not create model directory: ${modelDir.absolutePath}")
+        }
+
+        val target = File(modelDir, safeFileName)
+        closeEngine()
+        if (target.exists() && !target.delete()) {
+            throw IllegalStateException("Could not replace existing model file: ${target.absolutePath}")
+        }
+
+        val copiedBytes = contentResolver.openInputStream(uri).use { input ->
+            if (input == null) {
+                throw IllegalStateException("Could not open selected model file.")
+            }
+            target.outputStream().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var totalBytes = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) {
+                        break
+                    }
+                    output.write(buffer, 0, read)
+                    totalBytes += read.toLong()
+                }
+                totalBytes
+            }
+        }
+
+        if (copiedBytes <= 0L) {
+            target.delete()
+            throw IllegalStateException("Selected model file is empty.")
+        }
+
+        return mapOf(
+            "path" to target.absolutePath,
+            "name" to displayName,
+            "bytes" to copiedBytes
+        )
+    }
+
+    private fun queryDisplayName(uri: Uri): String {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (index >= 0) {
+                        val name = cursor.getString(index)
+                        if (!name.isNullOrBlank()) {
+                            return name
+                        }
+                    }
+                }
+            }
+        return "gemma-model.litertlm"
+    }
+
+    private fun sanitizeFileName(fileName: String): String {
+        val baseName = fileName
+            .trim()
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .trim('_')
+            .ifBlank { "gemma-model" }
+        return if (baseName.endsWith(".litertlm", ignoreCase = true)) {
+            baseName
+        } else {
+            "$baseName.litertlm"
+        }
     }
 
     private fun runInference(
@@ -214,6 +360,7 @@ class MainActivity : FlutterActivity() {
     ) : Exception(message)
 
     companion object {
+        private const val REQUEST_IMPORT_MODEL = 7041
         private const val MAX_IMAGES = 10
     }
 }

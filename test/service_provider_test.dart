@@ -11,6 +11,7 @@ import 'package:fitface/domain/services/ai_engine_adapter.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
+import 'package:fitface/domain/services/local_gemma_model_service.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
 import 'package:fitface/providers/camera_overlay_provider.dart';
 import 'package:fitface/providers/storage_provider.dart';
@@ -209,6 +210,35 @@ void main() {
     expect(arguments['modelName'], 'Gemma 4 E4B-it');
     expect(arguments['imagePath'], 'snapshot.png');
     expect(arguments['prompt'], '테스트 prompt');
+  });
+
+  test('LocalGemmaModelService imports model metadata from native channel',
+      () async {
+    const channel = MethodChannel('fitface/local_gemma_import_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return {
+        'path':
+            '/storage/emulated/0/Android/data/com.example.fitface/files/models/gemma-4-E4B-it.litertlm',
+        'name': 'gemma-4-E4B-it.litertlm',
+        'bytes': 3456789012,
+      };
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    const service = LocalGemmaModelService(channel: channel);
+    final imported = await service.importModel();
+
+    expect(calls.single.method, 'importModel');
+    expect(imported, isNotNull);
+    expect(imported!.name, 'gemma-4-E4B-it.litertlm');
+    expect(imported.path, contains('/models/gemma-4-E4B-it.litertlm'));
+    expect(imported.bytes, 3456789012);
   });
 
   test('CameraOverlayProvider clamps opacity and scale', () async {

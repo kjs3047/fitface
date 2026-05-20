@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../data/models/ai_settings.dart';
 import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/repository_provider.dart';
+import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
 import '../../../providers/storage_provider.dart';
 import '../../../providers/user_profile_provider.dart';
@@ -159,6 +160,64 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _importLocalModel(BuildContext context, WidgetRef ref) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Expanded(child: Text('모델 파일을 가져오는 중입니다.')),
+          ],
+        ),
+      ),
+    );
+
+    Object? error;
+    final imported = await ref
+        .read(localGemmaModelServiceProvider)
+        .importModel()
+        .catchError((Object caught) {
+      error = caught;
+      return null;
+    });
+
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('모델 파일을 가져오지 못했습니다: $error')),
+      );
+      return;
+    }
+    if (imported == null) {
+      return;
+    }
+
+    await ref.read(aiSettingsProvider.notifier).setLocalModel(
+          path: imported.path,
+          name: imported.name,
+        );
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Local Gemma 모델을 가져왔습니다. (${_formatModelBytes(imported.bytes)})',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _clearAiCache(BuildContext context, WidgetRef ref) async {
     final confirmed = await _confirm(
       context,
@@ -203,6 +262,18 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _formatModelBytes(int bytes) {
+    const gb = 1024 * 1024 * 1024;
+    const mb = 1024 * 1024;
+    if (bytes >= gb) {
+      return '${(bytes / gb).toStringAsFixed(1)}GB';
+    }
+    if (bytes >= mb) {
+      return '${(bytes / mb).toStringAsFixed(0)}MB';
+    }
+    return '${bytes}B';
   }
 
   @override
@@ -320,6 +391,7 @@ class SettingsScreen extends ConsumerWidget {
                 ref,
                 aiSettings,
               ),
+              onLocalModelImport: () => _importLocalModel(context, ref),
               onClearAiCache: () => _clearAiCache(context, ref),
             ),
             const SizedBox(height: 12),
@@ -359,6 +431,7 @@ class _AiSettingsCard extends StatelessWidget {
     required this.onCloudConsentChanged,
     required this.onOpenAiProxyTap,
     required this.onLocalModelTap,
+    required this.onLocalModelImport,
     required this.onClearAiCache,
   });
 
@@ -368,6 +441,7 @@ class _AiSettingsCard extends StatelessWidget {
   final ValueChanged<bool> onCloudConsentChanged;
   final VoidCallback onOpenAiProxyTap;
   final VoidCallback onLocalModelTap;
+  final VoidCallback onLocalModelImport;
   final VoidCallback onClearAiCache;
 
   @override
@@ -458,6 +532,15 @@ class _AiSettingsCard extends StatelessWidget {
               isThreeLine: settings.localModelPath != null,
               trailing: const Icon(Icons.chevron_right),
               onTap: onLocalModelTap,
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                key: const Key('ai-settings-import-local-model-button'),
+                onPressed: onLocalModelImport,
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('모델 파일 가져오기'),
+              ),
             ),
             const Divider(height: 1),
             ListTile(
