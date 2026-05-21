@@ -174,7 +174,10 @@ void main() {
       flush: true,
     );
     final coordinator = AiAnalysisCoordinator(
-      settings: AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma),
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+      ),
       featureExtractor: const ImageFeatureExtractor(),
       localGemmaService: const _VisionFailsTextSucceedsEngine(),
     );
@@ -190,6 +193,78 @@ void main() {
     expect(result.engine, 'localGemma');
     expect(result.analysisMode, 'featuresOnly');
     expect(result.tags, contains('fallback-text'));
+  });
+
+  test(
+      'AiAnalysisCoordinator uses OpenAI engine when OpenAI mode is configured',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_openai_coordinator_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 60, height: 60);
+    img.fill(source, color: img.ColorRgb8(140, 160, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+    final openAiEngine = _RecordingOpenAiEngine();
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: openAiEngine,
+    );
+
+    final result = await coordinator.analyzeSnapshot(
+      OutfitSnapshot(
+        id: 'candidate',
+        imagePath: sourceFile.path,
+        createdAt: DateTime(2026),
+      ),
+    );
+
+    expect(openAiEngine.snapshotCalls, 1);
+    expect(openAiEngine.lastSnapshotRequest?.includeImage, isTrue);
+    expect(result.engine, 'openAi');
+    expect(result.analysisMode, 'imageAndFeatures');
+  });
+
+  test(
+      'AiAnalysisCoordinator surfaces missing OpenAI consent instead of fallback',
+      () async {
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: _RecordingOpenAiEngine(),
+    );
+
+    await expectLater(
+      () => coordinator.analyzeSnapshot(
+        OutfitSnapshot(
+          id: 'candidate',
+          imagePath: 'missing.png',
+          createdAt: DateTime(2026),
+        ),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('클라우드 AI 사용 동의'),
+        ),
+      ),
+    );
   });
 
   test('LocalGemmaAnalysisService sends model settings to native channel',
@@ -467,7 +542,10 @@ void main() {
       flush: true,
     );
     final service = AiPersonalColorService(
-      settings: AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma),
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+      ),
       featureExtractor: const ImageFeatureExtractor(),
       localGemmaService: const _PersonalColorVisionFailsTextSucceedsEngine(),
     );
@@ -746,6 +824,41 @@ class _VisionFailsTextSucceedsEngine implements AiEngineAdapter {
       comment: '색상정보 기반 비교입니다.',
       engine: engineName,
       analysisMode: 'featuresOnly',
+    );
+  }
+}
+
+class _RecordingOpenAiEngine implements AiEngineAdapter {
+  int snapshotCalls = 0;
+  AiSnapshotAnalysisRequest? lastSnapshotRequest;
+
+  @override
+  String get engineName => 'openAi';
+
+  @override
+  Future<AiAnalysisResult> analyzeSnapshot(
+    AiSnapshotAnalysisRequest request,
+  ) async {
+    snapshotCalls++;
+    lastSnapshotRequest = request;
+    return AiAnalysisResult(
+      score: 86,
+      comment: 'OpenAI API 분석입니다.',
+      tags: const ['openai'],
+      engine: engineName,
+      analysisMode: request.includeImage ? 'imageAndFeatures' : 'featuresOnly',
+    );
+  }
+
+  @override
+  Future<AiAnalysisResult> compareSnapshots(
+    AiCompareAnalysisRequest request,
+  ) async {
+    return AiAnalysisResult(
+      score: 86,
+      comment: 'OpenAI API 비교입니다.',
+      engine: engineName,
+      analysisMode: request.includeImages ? 'imageAndFeatures' : 'featuresOnly',
     );
   }
 }

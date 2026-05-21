@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/ai_analysis_result.dart';
+import '../../../data/models/ai_settings.dart';
 import '../../../data/models/outfit_snapshot.dart';
+import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
+import '../../widgets/ai_processing_status.dart';
 import '../../routes/route_names.dart';
 import '../../widgets/app_top_bar.dart';
 
@@ -80,6 +83,8 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
   @override
   Widget build(BuildContext context) {
     final snapshotsAsync = ref.watch(snapshotProvider);
+    final aiSettings =
+        ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
 
     return Scaffold(
       appBar: AppTopBar(
@@ -149,14 +154,39 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
                   ),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: FilledButton.icon(
-                      onPressed: snapshots.isEmpty || _isComparing
-                          ? null
-                          : () => _compareAi(snapshots),
-                      icon: const Icon(Icons.auto_awesome_outlined),
-                      label: Text(
-                        _isComparing ? '비교 중' : 'AI에게 3개 비교 요청',
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: snapshots.isEmpty || _isComparing
+                              ? null
+                              : () => _compareAi(snapshots),
+                          icon: _isComparing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_awesome_outlined),
+                          label: Text(
+                            _isComparing ? '비교 중...' : 'AI에게 3개 비교 요청',
+                          ),
+                        ),
+                        if (_isComparing) ...[
+                          const SizedBox(height: 10),
+                          AiProcessingStatus(
+                            keyPrefix: 'compare',
+                            mode: aiSettings.mode,
+                            label: '후보 비교 중',
+                            localMessage:
+                                'Local Gemma가 후보 ${snapshots.length}개의 이미지와 색상 정보를 비교하고 있습니다.',
+                            cloudMessage: 'OpenAI 프록시 서버로 후보 비교 요청을 보내고 있습니다.',
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -281,6 +311,11 @@ class _AiCompareSummary extends StatelessWidget {
                     'AI 비교 결과',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _engineLabel(result),
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     result.comment,
@@ -293,6 +328,23 @@ class _AiCompareSummary extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _engineLabel(AiAnalysisResult result) {
+    switch (result.engine) {
+      case 'openAi':
+        return result.analysisMode == 'featuresOnly'
+            ? 'OpenAI API · 색상정보 분석'
+            : 'OpenAI API · 이미지+색상정보 분석';
+      case 'localGemma':
+        return result.analysisMode == 'featuresOnly'
+            ? 'Local Gemma · 색상정보 분석'
+            : 'Local Gemma · 이미지+색상정보 분석';
+      case 'ruleBased':
+        return '색상정보 fallback';
+      default:
+        return result.engine;
+    }
   }
 }
 

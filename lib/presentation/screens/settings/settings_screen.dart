@@ -62,31 +62,15 @@ class SettingsScreen extends ConsumerWidget {
     String? currentValue,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    var nextValue = currentValue ?? '';
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('OpenAI 프록시 주소'),
-        content: TextFormField(
-          key: const Key('ai-settings-openai-proxy-url-field'),
-          initialValue: nextValue,
-          decoration: const InputDecoration(
-            labelText: '프록시 URL',
-            hintText: 'https://example.com',
-          ),
-          keyboardType: TextInputType.url,
-          onChanged: (value) => nextValue = value,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, nextValue),
-            child: const Text('저장'),
-          ),
-        ],
+      builder: (context) => _OpenAiProxyDialog(
+        initialValue: currentValue ?? '',
+        onTest: (proxyUrl) async {
+          final check =
+              await ref.read(openAiProxyHealthServiceProvider).check(proxyUrl);
+          return check.message;
+        },
       ),
     );
     if (value == null) {
@@ -531,6 +515,151 @@ class SettingsScreen extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OpenAiProxyDialog extends StatefulWidget {
+  const _OpenAiProxyDialog({
+    required this.initialValue,
+    required this.onTest,
+  });
+
+  final String initialValue;
+  final Future<String> Function(String proxyUrl) onTest;
+
+  @override
+  State<_OpenAiProxyDialog> createState() => _OpenAiProxyDialogState();
+}
+
+class _OpenAiProxyDialogState extends State<_OpenAiProxyDialog> {
+  late final TextEditingController _controller;
+  bool _isTesting = false;
+  String? _testMessage;
+  bool _testSucceeded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testConnection() async {
+    if (_isTesting) {
+      return;
+    }
+    setState(() {
+      _isTesting = true;
+      _testMessage = null;
+      _testSucceeded = false;
+    });
+    try {
+      final message = await widget.onTest(_controller.text);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _testMessage = message;
+        _testSucceeded = true;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _testMessage = '연결 테스트 실패: $error';
+        _testSucceeded = false;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isTesting = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final testMessage = _testMessage;
+    final messageColor =
+        _testSucceeded ? AppTheme.ink : Theme.of(context).colorScheme.error;
+    return AlertDialog(
+      title: const Text('OpenAI 프록시 주소'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextFormField(
+            key: const Key('ai-settings-openai-proxy-url-field'),
+            controller: _controller,
+            decoration: const InputDecoration(
+              labelText: '프록시 URL',
+              hintText: 'http://192.168.0.10:8787',
+            ),
+            keyboardType: TextInputType.url,
+            onChanged: (_) {
+              if (_testMessage != null) {
+                setState(() {
+                  _testMessage = null;
+                  _testSucceeded = false;
+                });
+              }
+            },
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '저장 전 연결 테스트로 /health 응답을 확인할 수 있습니다.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          if (_isTesting) ...[
+            const SizedBox(height: 12),
+            const Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 10),
+                Expanded(child: Text('프록시 연결을 확인하는 중입니다.')),
+              ],
+            ),
+          ],
+          if (testMessage != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              testMessage,
+              key: const Key('ai-settings-openai-proxy-test-message'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: messageColor,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isTesting ? null : () => Navigator.pop(context),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          key: const Key('ai-settings-openai-proxy-test-button'),
+          onPressed: _isTesting ? null : _testConnection,
+          child: const Text('연결 테스트'),
+        ),
+        TextButton(
+          onPressed: _isTesting
+              ? null
+              : () => Navigator.pop(context, _controller.text),
+          child: const Text('저장'),
+        ),
+      ],
     );
   }
 }

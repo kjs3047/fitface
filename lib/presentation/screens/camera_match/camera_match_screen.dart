@@ -7,13 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/ai_settings.dart';
 import '../../../data/models/outfit_snapshot.dart';
+import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/camera_overlay_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
 import '../../../providers/storage_provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
+import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/face_overlay_widget.dart';
@@ -295,6 +298,8 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
   Widget build(BuildContext context) {
     final profile = ref.watch(userProfileProvider).value;
     final overlay = ref.watch(cameraOverlayProvider);
+    final aiSettings =
+        ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
     final overlayPath = profile?.overlayFaceImagePath;
 
     return Scaffold(
@@ -363,6 +368,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
                   ),
                   _BottomControls(
                     opacity: overlay.opacity,
+                    aiMode: aiSettings.mode,
                     isSaving: _isSaving,
                     isAiPreviewing: _isAiPreviewing,
                     onOpacityChanged:
@@ -429,6 +435,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
 class _BottomControls extends StatelessWidget {
   const _BottomControls({
     required this.opacity,
+    required this.aiMode,
     required this.isSaving,
     required this.isAiPreviewing,
     required this.onOpacityChanged,
@@ -438,6 +445,7 @@ class _BottomControls extends StatelessWidget {
   });
 
   final double opacity;
+  final AiEngineMode aiMode;
   final bool isSaving;
   final bool isAiPreviewing;
   final ValueChanged<double> onOpacityChanged;
@@ -480,8 +488,14 @@ class _BottomControls extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: isAiPreviewing ? null : onAi,
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    label: Text(isAiPreviewing ? '분석 중' : 'AI판단'),
+                    icon: isAiPreviewing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_awesome_outlined),
+                    label: Text(isAiPreviewing ? '분석 중...' : 'AI판단'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -494,6 +508,16 @@ class _BottomControls extends StatelessWidget {
                 ),
               ],
             ),
+            if (isAiPreviewing) ...[
+              const SizedBox(height: 10),
+              AiProcessingStatus(
+                keyPrefix: 'camera-match-ai',
+                mode: aiMode,
+                label: 'AI 판단 중',
+                localMessage: 'Local Gemma가 현재 카메라 화면 이미지와 색상 정보를 분석하고 있습니다.',
+                cloudMessage: 'OpenAI 프록시 서버로 현재 화면 분석 요청을 보내고 있습니다.',
+              ),
+            ],
           ],
         ),
       ),

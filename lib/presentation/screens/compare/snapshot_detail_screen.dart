@@ -5,9 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../data/models/ai_analysis_result.dart';
+import '../../../data/models/ai_settings.dart';
 import '../../../data/models/outfit_snapshot.dart';
+import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
+import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
 import 'snapshot_image_viewer_screen.dart';
 
@@ -169,6 +172,8 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final snapshotsAsync = ref.watch(snapshotProvider);
+    final aiSettings =
+        ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
 
     return Scaffold(
       appBar: const AppTopBar(title: '후보 상세'),
@@ -287,8 +292,16 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                                 onPressed: isAnalyzing
                                     ? null
                                     : () => _runAi(snapshots),
-                                icon: const Icon(Icons.auto_awesome_outlined),
-                                label: Text(isAnalyzing ? '분석 중' : 'AI 판단'),
+                                icon: isAnalyzing
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.auto_awesome_outlined),
+                                label: Text(isAnalyzing ? '분석 중...' : 'AI 판단'),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -301,11 +314,21 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                             ),
                           ],
                         ),
-                        if (isAnalyzing || aiResult != null) ...[
+                        if (isAnalyzing) ...[
+                          const SizedBox(height: 12),
+                          AiProcessingStatus(
+                            keyPrefix: 'snapshot-detail',
+                            mode: aiSettings.mode,
+                            label: '후보 분석 중',
+                            localMessage:
+                                'Local Gemma가 후보 이미지와 추출 색상 정보를 함께 분석하고 있습니다.',
+                            cloudMessage: 'OpenAI 프록시 서버로 후보 분석 요청을 보내고 있습니다.',
+                          ),
+                        ],
+                        if (aiResult != null) ...[
                           const SizedBox(height: 12),
                           _SnapshotAiResultCard(
                             result: aiResult,
-                            isLoading: isAnalyzing,
                           ),
                         ],
                       ],
@@ -324,43 +347,12 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
 class _SnapshotAiResultCard extends StatelessWidget {
   const _SnapshotAiResultCard({
     required this.result,
-    required this.isLoading,
   });
 
-  final AiAnalysisResult? result;
-  final bool isLoading;
+  final AiAnalysisResult result;
 
   @override
   Widget build(BuildContext context) {
-    final currentResult = result;
-    if (isLoading && currentResult == null) {
-      return DecoratedBox(
-        key: const Key('snapshot-detail-ai-loading-card'),
-        decoration: BoxDecoration(
-          color: AppTheme.accentSoft,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.line),
-        ),
-        child: const Padding(
-          padding: EdgeInsets.all(12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              SizedBox(width: 10),
-              Expanded(child: Text('AI가 후보를 분석하는 중입니다.')),
-            ],
-          ),
-        ),
-      );
-    }
-    final visibleResult = currentResult;
-    if (visibleResult == null) {
-      return const SizedBox.shrink();
-    }
     return DecoratedBox(
       key: const Key('snapshot-detail-ai-result-card'),
       decoration: BoxDecoration(
@@ -381,23 +373,31 @@ class _SnapshotAiResultCard extends StatelessWidget {
                   'AI 분석 결과',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _engineLabel(result),
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Text(
-                  '${visibleResult.score.clamp(0, 100)}/100',
+                  '${result.score.clamp(0, 100)}/100',
                   key: const Key('snapshot-detail-ai-score'),
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            Text(visibleResult.comment),
-            if (visibleResult.tags.isNotEmpty) ...[
+            Text(result.comment),
+            if (result.tags.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (final tag in visibleResult.tags)
+                  for (final tag in result.tags)
                     DecoratedBox(
                       decoration: BoxDecoration(
                         color: AppTheme.surface,
@@ -415,10 +415,10 @@ class _SnapshotAiResultCard extends StatelessWidget {
                 ],
               ),
             ],
-            if (visibleResult.suggestions.isNotEmpty) ...[
+            if (result.suggestions.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                visibleResult.suggestions.first,
+                result.suggestions.first,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
@@ -426,6 +426,25 @@ class _SnapshotAiResultCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _engineLabel(AiAnalysisResult result) {
+    switch (result.engine) {
+      case 'openAi':
+        return result.analysisMode == 'featuresOnly'
+            ? 'OpenAI API · 색상정보'
+            : 'OpenAI API · 이미지+색상정보';
+      case 'localGemma':
+        return result.analysisMode == 'featuresOnly'
+            ? 'Local Gemma · 색상정보'
+            : 'Local Gemma · 이미지+색상정보';
+      case 'ruleBased':
+        return '색상정보 fallback';
+      case 'cached':
+        return '저장된 결과';
+      default:
+        return result.engine;
+    }
   }
 }
 

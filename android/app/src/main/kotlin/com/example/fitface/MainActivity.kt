@@ -299,10 +299,12 @@ class MainActivity : FlutterActivity() {
                     imagePaths = normalizedImagePaths,
                     includeImages = includeImages
                 )
+                closeEngine()
                 mainHandler.post { result.success(extractJsonObject(response)) }
             } catch (error: LocalGemmaException) {
                 mainHandler.post { result.error(error.code, error.message, null) }
             } catch (error: Throwable) {
+                closeEngine()
                 mainHandler.post {
                     result.error(
                         "LOCAL_GEMMA_INFERENCE_FAILED",
@@ -354,8 +356,8 @@ class MainActivity : FlutterActivity() {
         val newEngine = Engine(
             EngineConfig(
                 modelPath = modelPath,
-                backend = Backend.GPU(),
-                visionBackend = if (includeVision) Backend.GPU() else null,
+                backend = Backend.CPU(4),
+                visionBackend = if (includeVision) Backend.CPU(4) else null,
                 maxNumTokens = 4096,
                 cacheDir = cacheDir.absolutePath
             )

@@ -31,6 +31,9 @@ void main() {
       const expectedModelBytes = int.fromEnvironment(
         'LOCAL_GEMMA_MODEL_BYTES',
       );
+      const runVisionDiagnostic = bool.fromEnvironment(
+        'LOCAL_GEMMA_RUN_VISION_DIAGNOSTIC',
+      );
 
       if (modelPath.isEmpty) {
         // This test is intentionally opt-in because it needs a multi-GB model
@@ -44,7 +47,7 @@ void main() {
         localModelName: modelName,
       );
 
-      await _waitForModelPath(
+      await _logModelPathVisibility(
         modelPath,
         expectedBytes: expectedModelBytes > 0 ? expectedModelBytes : null,
       );
@@ -75,53 +78,23 @@ void main() {
       );
       final engine = LocalGemmaAnalysisService(settings: settings);
 
-      try {
-        final visionResult = await engine.analyzeSnapshot(
-          AiSnapshotAnalysisRequest(
-            snapshot: snapshot,
-            features: null,
-            includeImage: true,
-            prompt: _visionDiagnosticPrompt,
-          ),
-        );
-        debugPrint(
-          'LOCAL_GEMMA_VISION_RESULT=${jsonEncode(visionResult.toJson())}',
-        );
-      } catch (error) {
-        debugPrint('LOCAL_GEMMA_VISION_ERROR=$error');
-      }
-
       final coordinator = AiAnalysisCoordinator(
         settings: settings,
         featureExtractor: const ImageFeatureExtractor(),
         localGemmaService: engine,
       );
       final coordinated = await coordinator.analyzeSnapshot(snapshot);
-      expect(coordinated.comment, isNotEmpty);
-      expect(coordinated.score, inInclusiveRange(0, 100));
       debugPrint(
         'LOCAL_GEMMA_COORDINATOR_RESULT=${jsonEncode(coordinated.toJson())}',
       );
+      expect(coordinated.comment, isNotEmpty);
+      expect(coordinated.score, inInclusiveRange(0, 100));
+      expect(coordinated.engine, 'localGemma');
+      expect(coordinated.analysisMode, 'featuresOnly');
 
       final personalColorEngine = LocalGemmaPersonalColorService(
         settings: settings,
       );
-      try {
-        final personalColorVision = await personalColorEngine.analyze(
-          PersonalColorAnalysisRequest(
-            faceImagePath: snapshotPath,
-            features: null,
-            includeImage: true,
-            prompt: _personalColorDiagnosticPrompt,
-          ),
-        );
-        debugPrint(
-          'LOCAL_GEMMA_PERSONAL_COLOR_VISION=${jsonEncode(personalColorVision.toJson())}',
-        );
-      } catch (error) {
-        debugPrint('LOCAL_GEMMA_PERSONAL_COLOR_VISION_ERROR=$error');
-      }
-
       final personalColor = await AiPersonalColorService(
         settings: settings,
         featureExtractor: const ImageFeatureExtractor(),
@@ -132,6 +105,40 @@ void main() {
       debugPrint(
         'LOCAL_GEMMA_PERSONAL_COLOR_COORDINATOR=${jsonEncode(personalColor.toJson())}',
       );
+
+      if (runVisionDiagnostic) {
+        try {
+          final visionResult = await engine.analyzeSnapshot(
+            AiSnapshotAnalysisRequest(
+              snapshot: snapshot,
+              features: null,
+              includeImage: true,
+              prompt: _visionDiagnosticPrompt,
+            ),
+          );
+          debugPrint(
+            'LOCAL_GEMMA_VISION_RESULT=${jsonEncode(visionResult.toJson())}',
+          );
+        } catch (error) {
+          debugPrint('LOCAL_GEMMA_VISION_ERROR=$error');
+        }
+
+        try {
+          final personalColorVision = await personalColorEngine.analyze(
+            PersonalColorAnalysisRequest(
+              faceImagePath: snapshotPath,
+              features: null,
+              includeImage: true,
+              prompt: _personalColorDiagnosticPrompt,
+            ),
+          );
+          debugPrint(
+            'LOCAL_GEMMA_PERSONAL_COLOR_VISION=${jsonEncode(personalColorVision.toJson())}',
+          );
+        } catch (error) {
+          debugPrint('LOCAL_GEMMA_PERSONAL_COLOR_VISION_ERROR=$error');
+        }
+      }
     },
     timeout: const Timeout(Duration(minutes: 15)),
   );
@@ -159,25 +166,21 @@ img.Image _diagnosticImage() {
   return image;
 }
 
-Future<void> _waitForModelPath(
+Future<void> _logModelPathVisibility(
   String modelPath, {
   required int? expectedBytes,
 }) async {
   final modelFile = File(modelPath);
-  for (var attempt = 0; attempt < 180; attempt++) {
-    final exists = await modelFile.exists();
-    final length = exists ? await modelFile.length() : 0;
-    if (exists && (expectedBytes == null || length == expectedBytes)) {
-      return;
-    }
-    if (attempt % 10 == 0) {
-      debugPrint(
-        'LOCAL_GEMMA_WAITING_FOR_MODEL=$modelPath bytes=$length expected=$expectedBytes',
-      );
-    }
-    await Future<void>.delayed(const Duration(seconds: 1));
+  final exists = await modelFile.exists();
+  final length = exists ? await modelFile.length() : 0;
+  debugPrint(
+    'LOCAL_GEMMA_DART_FILE_VISIBILITY=$modelPath exists=$exists bytes=$length expected=$expectedBytes',
+  );
+  if (exists && expectedBytes != null && length != expectedBytes) {
+    throw StateError(
+      'Local Gemma model size mismatch: $modelPath bytes=$length expected=$expectedBytes',
+    );
   }
-  throw StateError('Local Gemma model file did not appear: $modelPath');
 }
 
 const _visionDiagnosticPrompt = '''

@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../data/models/ai_settings.dart';
 import '../../../data/models/personal_color_result.dart';
 import '../../../data/models/user_profile.dart';
+import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/repository_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
+import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/personal_color_result_card.dart';
@@ -32,6 +35,8 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
   @override
   Widget build(BuildContext context) {
     final profileAsync = ref.watch(userProfileProvider);
+    final aiSettings =
+        ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
     return Scaffold(
       appBar: const AppTopBar(title: '퍼스널 컬러'),
       body: profileAsync.when(
@@ -87,7 +92,7 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildAnalysisSection(faceImagePath),
+                _buildAnalysisSection(faceImagePath, aiSettings.mode),
               ],
             ),
           );
@@ -127,8 +132,8 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
     });
   }
 
-  Widget _buildAnalysisSection(String faceImagePath) {
-    if (_isLoadingCached || _isAnalyzing) {
+  Widget _buildAnalysisSection(String faceImagePath, AiEngineMode aiMode) {
+    if (_isLoadingCached) {
       return const Card(
         child: Padding(
           padding: EdgeInsets.all(18),
@@ -142,6 +147,20 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
               SizedBox(width: 12),
               Expanded(child: Text('퍼스널 컬러를 확인하는 중입니다.')),
             ],
+          ),
+        ),
+      );
+    }
+    if (_isAnalyzing) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: AiProcessingStatus(
+            keyPrefix: 'personal-color',
+            mode: aiMode,
+            label: '퍼스널 컬러 분석 중',
+            localMessage: 'Local Gemma가 얼굴 이미지와 추출 색상 정보를 함께 분석하고 있습니다.',
+            cloudMessage: 'OpenAI 프록시 서버로 퍼스널 컬러 분석 요청을 보내고 있습니다.',
           ),
         ),
       );

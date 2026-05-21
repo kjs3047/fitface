@@ -56,6 +56,7 @@ class AiPersonalColorService implements PersonalColorService {
         reason: 'AI 기능이 꺼져 있습니다.',
       );
     }
+    _ensureSelectedEngineConfigured();
 
     final engine = _engineForSettings();
     if (engine == null) {
@@ -65,19 +66,29 @@ class AiPersonalColorService implements PersonalColorService {
       );
     }
 
+    final includeImage = settings.mode != AiEngineMode.localGemma;
+    final prompt = settings.mode == AiEngineMode.localGemma
+        ? _promptBuilder.buildLocalPrompt(features: features)
+        : _promptBuilder.buildPrompt(
+            features: features,
+            includeImage: includeImage,
+          );
     try {
       return await engine.analyze(
         PersonalColorAnalysisRequest(
           faceImagePath: normalizedPath,
           features: features,
-          includeImage: true,
-          prompt: _promptBuilder.buildPrompt(
-            features: features,
-            includeImage: true,
-          ),
+          includeImage: includeImage,
+          prompt: prompt,
         ),
       );
     } catch (visionError) {
+      if (!includeImage) {
+        return _ruleBasedService.analyze(
+          features: features,
+          reason: visionError.toString(),
+        );
+      }
       if (features != null) {
         try {
           return await engine.analyze(
@@ -91,10 +102,11 @@ class AiPersonalColorService implements PersonalColorService {
               ),
             ),
           );
-        } catch (_) {
+        } catch (textError) {
           return _ruleBasedService.analyze(
             features: features,
-            reason: visionError.toString(),
+            reason:
+                '${visionError.toString()} / text fallback failed: $textError',
           );
         }
       }
@@ -123,6 +135,29 @@ class AiPersonalColorService implements PersonalColorService {
       case AiEngineMode.off:
       case AiEngineMode.mock:
         return null;
+    }
+  }
+
+  void _ensureSelectedEngineConfigured() {
+    switch (settings.mode) {
+      case AiEngineMode.localGemma:
+        final modelPath = settings.localModelPath;
+        if (modelPath == null || modelPath.trim().isEmpty) {
+          throw StateError('Local Gemma 모델 파일을 먼저 가져오세요.');
+        }
+        return;
+      case AiEngineMode.openAi:
+        if (!settings.allowCloudAnalysis) {
+          throw StateError('OpenAI API 사용을 위해 클라우드 AI 사용 동의가 필요합니다.');
+        }
+        final proxyUrl = settings.openAiProxyUrl;
+        if (proxyUrl == null || proxyUrl.trim().isEmpty) {
+          throw StateError('OpenAI API 프록시 주소를 먼저 설정하세요.');
+        }
+        return;
+      case AiEngineMode.off:
+      case AiEngineMode.mock:
+        return;
     }
   }
 }

@@ -10,6 +10,7 @@ import '../domain/services/face_neck_cutout_service.dart';
 import '../domain/services/image_feature_extractor.dart';
 import '../domain/services/local_gemma_analysis_service.dart';
 import '../domain/services/local_gemma_model_service.dart';
+import '../domain/services/open_ai_proxy_health_service.dart';
 import '../domain/services/personal_color_service.dart';
 import 'ai_settings_provider.dart';
 
@@ -31,6 +32,11 @@ final faceImageQualityServiceProvider =
 
 final localGemmaModelServiceProvider = Provider<LocalGemmaModelService>((ref) {
   return const LocalGemmaModelService();
+});
+
+final openAiProxyHealthServiceProvider =
+    Provider<OpenAiProxyHealthService>((ref) {
+  return OpenAiProxyHealthService();
 });
 
 final aiAnalysisServiceProvider = Provider<AiAnalysisService>((ref) {

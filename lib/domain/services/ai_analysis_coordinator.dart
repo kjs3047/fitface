@@ -46,6 +46,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
     if (settings.mode == AiEngineMode.mock) {
       return _mockService.analyzeSnapshot(snapshot);
     }
+    _ensureSelectedEngineConfigured();
 
     final features = await _tryExtract(snapshot.imagePath);
     final engine = _engineForSettings();
@@ -57,20 +58,34 @@ class AiAnalysisCoordinator implements AiAnalysisService {
       );
     }
 
+    final includeImage = settings.mode != AiEngineMode.localGemma;
+    final prompt = settings.mode == AiEngineMode.localGemma
+        ? _promptBuilder.buildLocalSnapshotPrompt(
+            snapshot: snapshot,
+            features: features,
+          )
+        : _promptBuilder.buildSnapshotPrompt(
+            snapshot: snapshot,
+            features: features,
+            includeImage: includeImage,
+          );
     try {
       return await engine.analyzeSnapshot(
         AiSnapshotAnalysisRequest(
           snapshot: snapshot,
           features: features,
-          includeImage: true,
-          prompt: _promptBuilder.buildSnapshotPrompt(
-            snapshot: snapshot,
-            features: features,
-            includeImage: true,
-          ),
+          includeImage: includeImage,
+          prompt: prompt,
         ),
       );
     } catch (visionError) {
+      if (!includeImage) {
+        return _ruleBasedService.analyzeSnapshot(
+          snapshot: snapshot,
+          features: features,
+          reason: visionError.toString(),
+        );
+      }
       if (features != null) {
         try {
           return await engine.analyzeSnapshot(
@@ -85,11 +100,12 @@ class AiAnalysisCoordinator implements AiAnalysisService {
               ),
             ),
           );
-        } catch (_) {
+        } catch (textError) {
           return _ruleBasedService.analyzeSnapshot(
             snapshot: snapshot,
             features: features,
-            reason: visionError.toString(),
+            reason:
+                '${visionError.toString()} / text fallback failed: $textError',
           );
         }
       }
@@ -115,6 +131,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
     if (settings.mode == AiEngineMode.mock) {
       return _mockService.compareSnapshots(snapshots);
     }
+    _ensureSelectedEngineConfigured();
 
     final featuresBySnapshotId = <String, ImageFeatureSummary>{};
     for (final snapshot in snapshots) {
@@ -133,20 +150,34 @@ class AiAnalysisCoordinator implements AiAnalysisService {
       );
     }
 
+    final includeImages = settings.mode != AiEngineMode.localGemma;
+    final prompt = settings.mode == AiEngineMode.localGemma
+        ? _promptBuilder.buildLocalComparePrompt(
+            snapshots: snapshots,
+            featuresBySnapshotId: featuresBySnapshotId,
+          )
+        : _promptBuilder.buildComparePrompt(
+            snapshots: snapshots,
+            featuresBySnapshotId: featuresBySnapshotId,
+            includeImages: includeImages,
+          );
     try {
       return await engine.compareSnapshots(
         AiCompareAnalysisRequest(
           snapshots: snapshots,
           featuresBySnapshotId: featuresBySnapshotId,
-          includeImages: true,
-          prompt: _promptBuilder.buildComparePrompt(
-            snapshots: snapshots,
-            featuresBySnapshotId: featuresBySnapshotId,
-            includeImages: true,
-          ),
+          includeImages: includeImages,
+          prompt: prompt,
         ),
       );
     } catch (visionError) {
+      if (!includeImages) {
+        return _ruleBasedService.compareSnapshots(
+          snapshots: snapshots,
+          featuresBySnapshotId: featuresBySnapshotId,
+          reason: visionError.toString(),
+        );
+      }
       if (featuresBySnapshotId.isNotEmpty) {
         try {
           return await engine.compareSnapshots(
@@ -161,11 +192,12 @@ class AiAnalysisCoordinator implements AiAnalysisService {
               ),
             ),
           );
-        } catch (_) {
+        } catch (textError) {
           return _ruleBasedService.compareSnapshots(
             snapshots: snapshots,
             featuresBySnapshotId: featuresBySnapshotId,
-            reason: visionError.toString(),
+            reason:
+                '${visionError.toString()} / text fallback failed: $textError',
           );
         }
       }
@@ -194,6 +226,29 @@ class AiAnalysisCoordinator implements AiAnalysisService {
       case AiEngineMode.off:
       case AiEngineMode.mock:
         return null;
+    }
+  }
+
+  void _ensureSelectedEngineConfigured() {
+    switch (settings.mode) {
+      case AiEngineMode.localGemma:
+        final modelPath = settings.localModelPath;
+        if (modelPath == null || modelPath.trim().isEmpty) {
+          throw StateError('Local Gemma 모델 파일을 먼저 가져오세요.');
+        }
+        return;
+      case AiEngineMode.openAi:
+        if (!settings.allowCloudAnalysis) {
+          throw StateError('OpenAI API 사용을 위해 클라우드 AI 사용 동의가 필요합니다.');
+        }
+        final proxyUrl = settings.openAiProxyUrl;
+        if (proxyUrl == null || proxyUrl.trim().isEmpty) {
+          throw StateError('OpenAI API 프록시 주소를 먼저 설정하세요.');
+        }
+        return;
+      case AiEngineMode.off:
+      case AiEngineMode.mock:
+        return;
     }
   }
 }

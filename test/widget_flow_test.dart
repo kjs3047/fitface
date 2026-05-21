@@ -5,6 +5,7 @@ import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:fitface/app.dart';
 import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_analysis_result.dart';
+import 'package:fitface/data/models/ai_settings.dart';
 import 'package:fitface/data/models/image_feature_summary.dart';
 import 'package:fitface/data/models/outfit_snapshot.dart';
 import 'package:fitface/data/models/personal_color_result.dart';
@@ -13,6 +14,7 @@ import 'package:fitface/data/repositories/user_profile_repository.dart';
 import 'package:fitface/domain/services/ai_analysis_service.dart';
 import 'package:fitface/domain/services/background_removal_service.dart';
 import 'package:fitface/domain/services/face_image_quality_service.dart';
+import 'package:fitface/domain/services/open_ai_proxy_health_service.dart';
 import 'package:fitface/presentation/screens/compare/compare_screen.dart';
 import 'package:fitface/presentation/screens/compare/snapshot_image_viewer_screen.dart';
 import 'package:fitface/presentation/screens/face_register/face_capture_screen.dart';
@@ -21,6 +23,7 @@ import 'package:fitface/presentation/screens/face_register/face_register_screen.
 import 'package:fitface/presentation/screens/onboarding/onboarding_screen.dart';
 import 'package:fitface/presentation/screens/settings/settings_screen.dart';
 import 'package:fitface/presentation/routes/app_routes.dart';
+import 'package:fitface/presentation/widgets/ai_processing_status.dart';
 import 'package:fitface/presentation/widgets/personal_color_result_card.dart';
 import 'package:fitface/providers/repository_provider.dart';
 import 'package:fitface/providers/service_provider.dart';
@@ -46,9 +49,15 @@ void main() {
     }
   });
 
-  Widget wrap(Widget child) {
+  Widget wrap(
+    Widget child, {
+    List<Override> overrides = const [],
+  }) {
     return ProviderScope(
-      overrides: [localFileStorageProvider.overrideWithValue(storage)],
+      overrides: [
+        localFileStorageProvider.overrideWithValue(storage),
+        ...overrides,
+      ],
       child: MaterialApp(home: child),
     );
   }
@@ -415,6 +424,48 @@ void main() {
     expect(find.textContaining('기기 내부에만 저장'), findsOneWidget);
   });
 
+  testWidgets('OpenAI proxy dialog includes connection test action',
+      (tester) async {
+    final healthService = _SuccessOpenAiProxyHealthService();
+
+    useTallTestView(tester);
+    await tester.pumpWidget(
+      wrap(
+        const SettingsScreen(),
+        overrides: [
+          openAiProxyHealthServiceProvider.overrideWithValue(healthService),
+        ],
+      ),
+    );
+
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.text('OpenAI 프록시 주소'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('OpenAI 프록시 주소'), findsWidgets);
+    expect(
+      find.byKey(const Key('ai-settings-openai-proxy-url-field')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const Key('ai-settings-openai-proxy-test-button')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const Key('ai-settings-openai-proxy-url-field')),
+      'http://127.0.0.1:8787',
+    );
+    await tester
+        .tap(find.byKey(const Key('ai-settings-openai-proxy-test-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('OpenAI 프록시 연결이 확인되었습니다.'), findsOneWidget);
+    expect(healthService.checkedUrl, 'http://127.0.0.1:8787');
+  });
+
   testWidgets('Local Gemma status guides import instead of manual path input',
       (tester) async {
     useTallTestView(tester);
@@ -434,6 +485,30 @@ void main() {
     expect(find.widgetWithText(TextButton, '모델 파일 가져오기'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(find.byType(TextFormField), findsNothing);
+  });
+
+  testWidgets('AI processing status explains slow Local Gemma work',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AiProcessingStatus(
+            keyPrefix: 'test-ai',
+            mode: AiEngineMode.localGemma,
+            label: '후보 비교 중',
+            localMessage: 'Local Gemma가 후보 3개의 이미지와 색상 정보를 비교하고 있습니다.',
+            cloudMessage: 'OpenAI 프록시 서버로 후보 비교 요청을 보내고 있습니다.',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('후보 비교 중'), findsOneWidget);
+    expect(find.textContaining('Local Gemma가 후보 3개'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 11));
+
+    expect(find.textContaining('기기에서 직접 분석 중'), findsOneWidget);
   });
 
   testWidgets('FitFaceApp starts at splash', (tester) async {
@@ -627,6 +702,19 @@ class _FaceCaptureCameraPlatform extends CameraPlatform {
   Future<void> dispose(int cameraId) async {
     await _initializedControllers.remove(cameraId)?.close();
     _errorControllers.remove(cameraId);
+  }
+}
+
+class _SuccessOpenAiProxyHealthService extends OpenAiProxyHealthService {
+  String? checkedUrl;
+
+  @override
+  Future<OpenAiProxyHealthCheck> check(String proxyUrl) async {
+    checkedUrl = proxyUrl;
+    return OpenAiProxyHealthCheck(
+      proxyUrl: proxyUrl,
+      message: 'OpenAI 프록시 연결이 확인되었습니다.',
+    );
   }
 }
 
