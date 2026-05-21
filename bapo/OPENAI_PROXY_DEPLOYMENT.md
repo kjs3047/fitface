@@ -78,6 +78,20 @@ FITFACE_PROXY_HOST=0.0.0.0
 FITFACE_PROXY_PORT=8787
 ```
 
+환경변수 등록 방식은 배포 방식에 따라 다르다.
+
+```text
+Docker Compose 배포:
+  프로젝트 루트 .env 파일을 만들고 docker-compose.yml의 env_file로 주입한다.
+
+Ubuntu/Debian 직접 실행:
+  .env 파일은 필수가 아니다.
+  테스트 실행은 shell export로 주입한다.
+  운영 실행은 /etc/fitface-openai-proxy.env 파일을 만들고 systemd EnvironmentFile로 주입한다.
+```
+
+중요: Dart 앱은 프로젝트 루트의 `.env` 파일을 자동으로 읽지 않는다. `dart run bin/fitface_openai_proxy.dart`만 실행하면 `.env` 파일이 있어도 적용되지 않는다. 반드시 shell, Docker Compose, systemd 중 하나가 환경변수로 주입해야 한다.
+
 ## 방식 1. Docker Compose 배포
 
 ### 1. 서버에 소스 받기
@@ -210,6 +224,10 @@ http://192.168.0.20:8787
 
 Ubuntu/Debian 서버라면 공식 apt repository로 Dart SDK를 설치할 수 있다.
 
+이 방식에서 프로젝트 루트 `.env` 파일은 필수가 아니다. 아래처럼 터미널에서 `export`로 환경변수를 넣으면 프록시를 바로 실행할 수 있다. 다만 `export` 방식은 현재 shell 세션에만 적용되므로 테스트용이다.
+
+운영 서버에서 계속 켜둘 때는 다음 섹션의 systemd 방식처럼 `/etc/fitface-openai-proxy.env`를 만들고 `EnvironmentFile=/etc/fitface-openai-proxy.env`로 읽게 하는 것을 권장한다.
+
 ### 1. 필수 패키지 설치
 
 ```bash
@@ -255,6 +273,8 @@ dart --version
 
 ### 5. FitFace 프록시 실행
 
+테스트용 임시 실행:
+
 ```bash
 git clone https://github.com/kjs3047/fitface.git /opt/fitface
 cd /opt/fitface
@@ -269,9 +289,13 @@ export FITFACE_PROXY_PORT="8787"
 dart run bin/fitface_openai_proxy.dart
 ```
 
+이 방식은 `.env` 파일 없이 동작한다. 대신 터미널을 닫거나 서버가 재부팅되면 환경변수와 프로세스가 사라진다.
+
 ## 방식 4. systemd 서비스 등록
 
 Ubuntu/Debian 서버에서 계속 켜두려면 systemd 서비스로 등록한다.
+
+systemd 방식에서는 프로젝트 루트 `.env`가 아니라 `/etc/fitface-openai-proxy.env`를 사용한다. 이 파일은 git repo 바깥에 있으므로 API key를 실수로 커밋할 위험이 낮고, `chmod 600`으로 권한을 제한하기 쉽다.
 
 ### 1. 서비스 사용자 생성
 
