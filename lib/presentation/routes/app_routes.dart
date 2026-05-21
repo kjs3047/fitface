@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../screens/ai_chat/local_gemma_chat_screen.dart';
 import '../screens/camera_match/camera_match_screen.dart';
 import '../screens/compare/compare_screen.dart';
 import '../screens/compare/snapshot_detail_screen.dart';
@@ -53,6 +54,8 @@ class AppRoutes {
             );
           case RouteNames.personalColor:
             return const PersonalColorScreen();
+          case RouteNames.aiChat:
+            return const LocalGemmaChatScreen();
           case RouteNames.settings:
             return const SettingsScreen();
           default:

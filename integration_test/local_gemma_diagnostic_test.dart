@@ -9,6 +9,7 @@ import 'package:fitface/domain/services/ai_engine_adapter.dart';
 import 'package:fitface/domain/services/ai_personal_color_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
+import 'package:fitface/domain/services/local_gemma_chat_service.dart';
 import 'package:fitface/domain/services/local_gemma_model_service.dart';
 import 'package:fitface/domain/services/local_gemma_personal_color_service.dart';
 import 'package:fitface/domain/services/personal_color_engine_adapter.dart';
@@ -106,6 +107,21 @@ void main() {
         'LOCAL_GEMMA_PERSONAL_COLOR_COORDINATOR=${jsonEncode(personalColor.toJson())}',
       );
 
+      final chatService = LocalGemmaChatService(settings: settings);
+      final chatText = await chatService.send(
+        const LocalGemmaChatRequest(
+          message: '네이비 재킷과 어울리는 색을 한 문장으로 추천해줘.',
+        ),
+      );
+      expect(chatText.text, isNotEmpty);
+      expect(chatText.usedImage, isFalse);
+      debugPrint(
+        'LOCAL_GEMMA_CHAT_TEXT=${jsonEncode({
+              'text': chatText.text,
+              'usedImage': chatText.usedImage,
+            })}',
+      );
+
       if (runVisionDiagnostic) {
         try {
           final visionResult = await engine.analyzeSnapshot(
@@ -137,6 +153,23 @@ void main() {
           );
         } catch (error) {
           debugPrint('LOCAL_GEMMA_PERSONAL_COLOR_VISION_ERROR=$error');
+        }
+
+        try {
+          final chatVision = await chatService.send(
+            LocalGemmaChatRequest(
+              message: '첨부 이미지의 색상과 스타일 경향을 한 문장으로 말해줘.',
+              imagePath: snapshotPath,
+            ),
+          );
+          debugPrint(
+            'LOCAL_GEMMA_CHAT_VISION=${jsonEncode({
+                  'text': chatVision.text,
+                  'usedImage': chatVision.usedImage,
+                })}',
+          );
+        } catch (error) {
+          debugPrint('LOCAL_GEMMA_CHAT_VISION_ERROR=$error');
         }
       }
     },

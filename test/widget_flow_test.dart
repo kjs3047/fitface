@@ -9,12 +9,15 @@ import 'package:fitface/data/models/ai_settings.dart';
 import 'package:fitface/data/models/image_feature_summary.dart';
 import 'package:fitface/data/models/outfit_snapshot.dart';
 import 'package:fitface/data/models/personal_color_result.dart';
+import 'package:fitface/data/repositories/ai_settings_repository.dart';
 import 'package:fitface/data/repositories/snapshot_repository.dart';
 import 'package:fitface/data/repositories/user_profile_repository.dart';
 import 'package:fitface/domain/services/ai_analysis_service.dart';
 import 'package:fitface/domain/services/background_removal_service.dart';
 import 'package:fitface/domain/services/face_image_quality_service.dart';
+import 'package:fitface/domain/services/local_gemma_chat_service.dart';
 import 'package:fitface/domain/services/open_ai_proxy_health_service.dart';
+import 'package:fitface/presentation/screens/ai_chat/local_gemma_chat_screen.dart';
 import 'package:fitface/presentation/screens/compare/compare_screen.dart';
 import 'package:fitface/presentation/screens/compare/snapshot_image_viewer_screen.dart';
 import 'package:fitface/presentation/screens/face_register/face_capture_screen.dart';
@@ -67,6 +70,18 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
+  AiSettings readyLocalGemmaSettings() {
+    return AiSettings.defaults().copyWith(
+      mode: AiEngineMode.localGemma,
+      localModelPath: '/models/gemma-4-E4B-it.litertlm',
+      localModelName: 'gemma-4-E4B-it.litertlm',
+    );
+  }
+
+  AiSettings localGemmaModeSettings() {
+    return AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma);
   }
 
   testWidgets('Onboarding shows required copy and register button',
@@ -487,6 +502,93 @@ void main() {
     expect(find.textContaining('기기 내부에만 저장'), findsOneWidget);
   });
 
+  testWidgets('Settings shows Local Gemma chatbot only in Local Gemma mode',
+      (tester) async {
+    useTallTestView(tester);
+    await tester.pumpWidget(wrap(const SettingsScreen()));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('AI 챗봇'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      wrap(
+        const SettingsScreen(),
+        overrides: [
+          aiSettingsRepositoryProvider.overrideWithValue(
+            _StaticAiSettingsRepository(
+              storage,
+              localGemmaModeSettings(),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('AI 챗봇'), findsOneWidget);
+    expect(find.text('모델 파일 가져오기 후 사용 가능'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      wrap(
+        const SettingsScreen(),
+        overrides: [
+          aiSettingsRepositoryProvider.overrideWithValue(
+            _StaticAiSettingsRepository(
+              storage,
+              readyLocalGemmaSettings(),
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('AI 챗봇'), findsOneWidget);
+    expect(find.text('Local Gemma로 기기 안에서 대화'), findsOneWidget);
+  });
+
+  testWidgets('Local Gemma chat sends text and renders response',
+      (tester) async {
+    final chatService = _FakeLocalGemmaChatService(
+      responseText: '차분한 딥 그린이나 차콜 재킷이 안정적으로 어울립니다.',
+    );
+
+    await tester.pumpWidget(
+      wrap(
+        const LocalGemmaChatScreen(),
+        overrides: [
+          aiSettingsRepositoryProvider.overrideWithValue(
+            _StaticAiSettingsRepository(
+              storage,
+              readyLocalGemmaSettings(),
+            ),
+          ),
+          localGemmaChatServiceProvider.overrideWithValue(chatService),
+        ],
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.enterText(
+      find.byKey(const Key('local-gemma-chat-input')),
+      '가을 재킷 색상 추천해줘',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('local-gemma-chat-send-button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('가을 재킷 색상 추천해줘'), findsOneWidget);
+    expect(
+      find.text('차분한 딥 그린이나 차콜 재킷이 안정적으로 어울립니다.'),
+      findsOneWidget,
+    );
+    expect(chatService.lastRequest?.message, '가을 재킷 색상 추천해줘');
+    expect(chatService.lastRequest?.imagePath, isNull);
+  });
+
   testWidgets('OpenAI proxy dialog includes connection test action',
       (tester) async {
     final healthService = _SuccessOpenAiProxyHealthService();
@@ -793,6 +895,51 @@ class _FaceCaptureCameraPlatform extends CameraPlatform {
   Future<void> dispose(int cameraId) async {
     await _initializedControllers.remove(cameraId)?.close();
     _errorControllers.remove(cameraId);
+  }
+}
+
+class _StaticAiSettingsRepository extends AiSettingsRepository {
+  _StaticAiSettingsRepository(super.storage, this.settings);
+
+  final AiSettings settings;
+
+  @override
+  Future<AiSettings> loadSettings() async {
+    return settings;
+  }
+
+  @override
+  Future<AiSettings> saveSettings(AiSettings settings) async {
+    return settings;
+  }
+}
+
+class _FakeLocalGemmaChatService extends LocalGemmaChatService {
+  _FakeLocalGemmaChatService({required this.responseText})
+      : super(
+          settings: AiSettings.defaults().copyWith(
+            mode: AiEngineMode.localGemma,
+            localModelPath: '/models/gemma-4-E4B-it.litertlm',
+          ),
+        );
+
+  final String responseText;
+  LocalGemmaChatRequest? lastRequest;
+  bool closed = false;
+
+  @override
+  Future<LocalGemmaChatResponse> send(LocalGemmaChatRequest request) async {
+    lastRequest = request;
+    return LocalGemmaChatResponse(
+      text: responseText,
+      usedImage: request.imagePath != null,
+      createdAt: DateTime(2026),
+    );
+  }
+
+  @override
+  Future<void> closeSession() async {
+    closed = true;
   }
 }
 

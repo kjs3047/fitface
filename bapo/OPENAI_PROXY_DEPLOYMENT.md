@@ -92,6 +92,31 @@ Ubuntu/Debian 직접 실행:
 
 중요: Dart 앱은 프로젝트 루트의 `.env` 파일을 자동으로 읽지 않는다. `dart run bin/fitface_openai_proxy.dart`만 실행하면 `.env` 파일이 있어도 적용되지 않는다. 반드시 shell, Docker Compose, systemd 중 하나가 환경변수로 주입해야 한다.
 
+### Dart SDK 직접 설치 시 `.env` 처리 기준
+
+Ubuntu/Debian 서버에 Dart SDK를 직접 설치하는 것과 `.env` 파일을 등록하는 것은 별개의 단계다.
+
+정리하면 다음과 같다.
+
+```text
+Dart SDK 설치:
+  프록시 프로그램을 실행하기 위한 런타임 설치다.
+  .env 등록은 필요 없다.
+
+테스트 실행:
+  .env 파일 없이 shell에서 export OPENAI_API_KEY=... 형태로 넣고 실행할 수 있다.
+  터미널을 닫거나 서버가 재부팅되면 사라지므로 장기 운영에는 맞지 않는다.
+
+운영 실행:
+  프로젝트 루트 .env 대신 /etc/fitface-openai-proxy.env 파일을 만든다.
+  systemd unit의 EnvironmentFile=/etc/fitface-openai-proxy.env 설정으로 읽게 한다.
+
+Docker Compose 실행:
+  docker-compose.yml의 env_file 설정이 프로젝트 루트 .env를 읽어 컨테이너에 주입한다.
+```
+
+따라서 Ubuntu/Debian에 Dart SDK를 직접 설치한다고 해서 `.env`를 반드시 프로젝트 루트에 만들 필요는 없다. 단, 프록시가 OpenAI API를 호출하려면 실행 시점에는 반드시 `OPENAI_API_KEY`가 환경변수로 들어가 있어야 한다.
+
 ## 방식 1. Docker Compose 배포
 
 ### 1. 서버에 소스 받기
@@ -227,6 +252,8 @@ Ubuntu/Debian 서버라면 공식 apt repository로 Dart SDK를 설치할 수 �
 이 방식에서 프로젝트 루트 `.env` 파일은 필수가 아니다. 아래처럼 터미널에서 `export`로 환경변수를 넣으면 프록시를 바로 실행할 수 있다. 다만 `export` 방식은 현재 shell 세션에만 적용되므로 테스트용이다.
 
 운영 서버에서 계속 켜둘 때는 다음 섹션의 systemd 방식처럼 `/etc/fitface-openai-proxy.env`를 만들고 `EnvironmentFile=/etc/fitface-openai-proxy.env`로 읽게 하는 것을 권장한다.
+
+즉, Dart SDK 설치 과정에는 `.env` 등록이 필요하지 않다. `.env` 또는 환경변수 파일은 프록시 프로세스를 실행할 때 `OPENAI_API_KEY`를 전달하기 위한 설정이다.
 
 ### 1. 필수 패키지 설치
 

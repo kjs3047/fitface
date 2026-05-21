@@ -371,6 +371,9 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final aiSettingsAsync = ref.watch(aiSettingsProvider);
     final aiSettings = aiSettingsAsync.valueOrNull ?? AiSettings.defaults();
+    final isLocalGemmaMode = aiSettings.mode == AiEngineMode.localGemma;
+    final hasLocalGemmaModel =
+        aiSettings.localModelPath?.trim().isNotEmpty ?? false;
     return Scaffold(
       appBar: const AppTopBar(title: '설정'),
       body: SafeArea(
@@ -494,6 +497,20 @@ class SettingsScreen extends ConsumerWidget {
             Card(
               child: Column(
                 children: [
+                  if (isLocalGemmaMode) ...[
+                    _SettingsTile(
+                      icon: Icons.chat_bubble_outline,
+                      title: 'AI 챗봇',
+                      subtitle: hasLocalGemmaModel
+                          ? 'Local Gemma로 기기 안에서 대화'
+                          : '모델 파일 가져오기 후 사용 가능',
+                      onTap: () => Navigator.pushNamed(
+                        context,
+                        RouteNames.aiChat,
+                      ),
+                    ),
+                    const Divider(height: 1),
+                  ],
                   _SettingsTile(
                     icon: Icons.palette_outlined,
                     title: '퍼스널 컬러 확인',

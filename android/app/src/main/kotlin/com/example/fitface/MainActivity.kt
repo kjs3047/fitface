@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "importModel" -> importModel(result)
                 "openUrl" -> openUrl(call.argument("url"), result)
+                "releaseModel" -> releaseModel(result)
                 "analyzeSnapshot" -> runInference(
                     prompt = call.argument("prompt"),
                     modelPath = call.argument("modelPath"),
@@ -58,6 +59,24 @@ class MainActivity : FlutterActivity() {
                     includeImages = false,
                     result = result
                 )
+                "chatSnapshot" -> runInference(
+                    prompt = call.argument("prompt"),
+                    modelPath = call.argument("modelPath"),
+                    imagePaths = listOfNotNull(call.argument("imagePath")),
+                    includeImages = true,
+                    result = result,
+                    extractJsonResponse = false,
+                    closeEngineAfterInference = false
+                )
+                "chatText" -> runInference(
+                    prompt = call.argument("prompt"),
+                    modelPath = call.argument("modelPath"),
+                    imagePaths = emptyList(),
+                    includeImages = false,
+                    result = result,
+                    extractJsonResponse = false,
+                    closeEngineAfterInference = false
+                )
                 "analyzePersonalColor" -> runInference(
                     prompt = call.argument("prompt"),
                     modelPath = call.argument("modelPath"),
@@ -74,6 +93,13 @@ class MainActivity : FlutterActivity() {
                 )
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun releaseModel(result: MethodChannel.Result) {
+        executor.execute {
+            closeEngine()
+            mainHandler.post { result.success(null) }
         }
     }
 
@@ -250,7 +276,9 @@ class MainActivity : FlutterActivity() {
         modelPath: String?,
         imagePaths: List<String>,
         includeImages: Boolean,
-        result: MethodChannel.Result
+        result: MethodChannel.Result,
+        extractJsonResponse: Boolean = true,
+        closeEngineAfterInference: Boolean = true
     ) {
         executor.execute {
             try {
@@ -299,8 +327,15 @@ class MainActivity : FlutterActivity() {
                     imagePaths = normalizedImagePaths,
                     includeImages = includeImages
                 )
-                closeEngine()
-                mainHandler.post { result.success(extractJsonObject(response)) }
+                val output = if (extractJsonResponse) {
+                    extractJsonObject(response)
+                } else {
+                    response.trim()
+                }
+                if (closeEngineAfterInference) {
+                    closeEngine()
+                }
+                mainHandler.post { result.success(output) }
             } catch (error: LocalGemmaException) {
                 mainHandler.post { result.error(error.code, error.message, null) }
             } catch (error: Throwable) {

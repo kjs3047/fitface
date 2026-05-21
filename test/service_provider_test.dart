@@ -15,6 +15,7 @@ import 'package:fitface/domain/services/face_image_quality_service.dart';
 import 'package:fitface/domain/services/face_neck_cutout_service.dart';
 import 'package:fitface/domain/services/image_feature_extractor.dart';
 import 'package:fitface/domain/services/local_gemma_analysis_service.dart';
+import 'package:fitface/domain/services/local_gemma_chat_service.dart';
 import 'package:fitface/domain/services/local_gemma_personal_color_service.dart';
 import 'package:fitface/domain/services/local_gemma_model_service.dart';
 import 'package:fitface/domain/services/mock_ai_analysis_service.dart';
@@ -318,6 +319,152 @@ void main() {
     expect(arguments['modelName'], 'Gemma 4 E4B-it');
     expect(arguments['imagePath'], 'snapshot.png');
     expect(arguments['prompt'], '테스트 prompt');
+  });
+
+  test('LocalGemmaChatService sends text chat to chatText', () async {
+    const channel = MethodChannel('fitface/local_gemma_chat_text_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return '테스트 챗 응답입니다.';
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaChatService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+        localModelName: 'Gemma 4 E4B-it',
+      ),
+      channel: channel,
+    );
+
+    final response = await service.send(
+      const LocalGemmaChatRequest(
+        message: '가을 재킷 색상 추천해줘',
+        history: [
+          LocalGemmaChatTurn(
+            role: LocalGemmaChatRole.user,
+            text: '나는 차분한 색을 좋아해.',
+          ),
+          LocalGemmaChatTurn(
+            role: LocalGemmaChatRole.assistant,
+            text: '그레이와 딥 틸이 잘 맞습니다.',
+          ),
+        ],
+      ),
+    );
+
+    expect(response.text, '테스트 챗 응답입니다.');
+    expect(response.usedImage, isFalse);
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'chatText');
+    final arguments = calls.single.arguments as Map<Object?, Object?>;
+    expect(
+      arguments['modelPath'],
+      '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+    );
+    expect(arguments['modelName'], 'Gemma 4 E4B-it');
+    expect(arguments['imagePath'], isNull);
+    expect(arguments['prompt'], contains('FitFace 앱 안의 Local Gemma 챗봇'));
+    expect(arguments['prompt'], contains('FitFace 사용 가이드'));
+    expect(arguments['prompt'], contains('얼굴 사진 변경'));
+    expect(arguments['prompt'], contains('모델 파일 가져오기'));
+    expect(arguments['prompt'], contains('OpenAI 프록시 주소'));
+    expect(arguments['prompt'], contains('가을 재킷 색상 추천해줘'));
+    expect(arguments['prompt'], contains('최근 대화 기록'));
+    final features = arguments['features'] as Map<Object?, Object?>;
+    expect(features['source'], 'fitfaceLocalGemmaChat');
+    expect(features['hasImage'], isFalse);
+  });
+
+  test('LocalGemmaChatService sends image chat to chatSnapshot', () async {
+    const channel = MethodChannel('fitface/local_gemma_chat_image_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return '첨부 이미지 분석 응답입니다.';
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaChatService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+        localModelName: 'Gemma 4 E4B-it',
+      ),
+      channel: channel,
+    );
+
+    final response = await service.send(
+      const LocalGemmaChatRequest(
+        message: '이 코디에서 어울리는 색을 봐줘',
+        imagePath: 'look.png',
+      ),
+    );
+
+    expect(response.text, '첨부 이미지 분석 응답입니다.');
+    expect(response.usedImage, isTrue);
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'chatSnapshot');
+    final arguments = calls.single.arguments as Map<Object?, Object?>;
+    expect(arguments['imagePath'], 'look.png');
+    expect(arguments['prompt'], contains('첨부 이미지가 함께 제공된다'));
+    expect(arguments['prompt'], contains('이 코디에서 어울리는 색을 봐줘'));
+    final features = arguments['features'] as Map<Object?, Object?>;
+    expect(features['hasImage'], isTrue);
+  });
+
+  test('LocalGemmaChatService requires configured model path', () async {
+    final service = LocalGemmaChatService(settings: AiSettings.defaults());
+
+    await expectLater(
+      () => service.send(
+        const LocalGemmaChatRequest(message: '테스트'),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('모델 파일'),
+        ),
+      ),
+    );
+  });
+
+  test('LocalGemmaChatService releases native model session', () async {
+    const channel = MethodChannel('fitface/local_gemma_chat_release_test');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaChatService(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.localGemma,
+        localModelPath: '/data/local/tmp/llm/gemma-4-E4B-it.litertlm',
+      ),
+      channel: channel,
+    );
+
+    await service.closeSession();
+
+    expect(calls, hasLength(1));
+    expect(calls.single.method, 'releaseModel');
   });
 
   test('LocalGemmaModelService imports model metadata from native channel',
