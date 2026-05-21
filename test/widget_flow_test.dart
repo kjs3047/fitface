@@ -290,6 +290,69 @@ void main() {
     expect(find.text('69/100'), findsOneWidget);
   });
 
+  testWidgets('Compare screen blocks candidate actions while AI is comparing', (
+    tester,
+  ) async {
+    final snapshots = [
+      for (var index = 0; index < 3; index++)
+        OutfitSnapshot(
+          id: 'locked_candidate_$index',
+          imagePath: 'missing_locked_candidate_$index.png',
+          createdAt: DateTime(2026, 5, 19, 13, index),
+          memo: '비교 중 후보 ${index + 1}',
+        ),
+    ];
+    final aiService = _PendingCompareAiService();
+    addTearDown(aiService.complete);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          localFileStorageProvider.overrideWithValue(storage),
+          snapshotRepositoryProvider.overrideWithValue(
+            _MemorySnapshotRepository(storage, snapshots),
+          ),
+          aiAnalysisServiceProvider.overrideWithValue(aiService),
+        ],
+        child: const MaterialApp(home: CompareScreen()),
+      ),
+    );
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      if (find.text('AI에게 3개 비교 요청').evaluate().isNotEmpty) {
+        break;
+      }
+    }
+
+    await tester.tap(find.text('AI에게 3개 비교 요청'));
+    await tester.pump();
+
+    expect(find.text('비교 중...'), findsOneWidget);
+
+    await tester.tap(find.text('비교 중 후보 1'));
+    await tester.pump();
+
+    expect(find.text('AI 비교가 끝난 뒤 후보를 열 수 있습니다.'), findsOneWidget);
+    expect(find.text('후보 상세'), findsNothing);
+
+    await tester.tap(find.byTooltip('후보 삭제').first);
+    await tester.pump();
+
+    expect(find.text('후보 삭제'), findsNothing);
+    expect(find.text('AI 비교가 끝난 뒤 후보를 열 수 있습니다.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('카메라'));
+    await tester.pump();
+
+    expect(find.text('비교 중 이동'), findsOneWidget);
+    expect(find.textContaining('진행 중인 결과를 받을 수 없습니다'), findsOneWidget);
+
+    await tester.tap(find.text('계속 기다리기'));
+    await tester.pump();
+
+    expect(find.text('비교 중...'), findsOneWidget);
+  });
+
   testWidgets('SnapshotImageViewer supports pinch zoom', (tester) async {
     await tester.pumpWidget(
       wrap(const SnapshotImageViewerScreen(imagePath: 'missing.png')),
@@ -550,6 +613,34 @@ class _BestSecondCandidateAiService implements AiAnalysisService {
       },
       comment: '두 번째 후보가 가장 안정적으로 어울리고 색 조화 기준에서도 우세합니다.',
     );
+  }
+}
+
+class _PendingCompareAiService implements AiAnalysisService {
+  final Completer<AiAnalysisResult> _compareCompleter =
+      Completer<AiAnalysisResult>();
+
+  void complete() {
+    if (!_compareCompleter.isCompleted) {
+      _compareCompleter.complete(
+        const AiAnalysisResult(
+          score: 80,
+          comment: '비교 완료',
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<AiAnalysisResult> analyzeSnapshot(OutfitSnapshot snapshot) async {
+    return const AiAnalysisResult(score: 70, comment: '후보 분석');
+  }
+
+  @override
+  Future<AiAnalysisResult> compareSnapshots(
+    List<OutfitSnapshot> snapshots,
+  ) {
+    return _compareCompleter.future;
   }
 }
 

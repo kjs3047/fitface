@@ -25,10 +25,74 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
   AiAnalysisResult? _compareResult;
   bool _isComparing = false;
 
+  void _showComparingBlockedMessage() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('AI 비교가 끝난 뒤 후보를 열 수 있습니다.')),
+      );
+  }
+
+  Future<bool> _confirmLeaveDuringComparison() async {
+    if (!_isComparing) {
+      return true;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('비교 중 이동'),
+        content: const Text(
+          'Local Gemma 비교가 진행 중입니다. 지금 이동하면 진행 중인 결과를 받을 수 없습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('계속 기다리기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('이동하기'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
+  }
+
+  Future<void> _openCamera() async {
+    if (_isComparing) {
+      final confirmed = await _confirmLeaveDuringComparison();
+      if (!confirmed || !mounted) {
+        return;
+      }
+      setState(() => _isComparing = false);
+    }
+    if (!mounted) {
+      return;
+    }
+    Navigator.pushReplacementNamed(context, RouteNames.cameraMatch);
+  }
+
+  void _openSnapshotDetail(String snapshotId) {
+    if (_isComparing) {
+      _showComparingBlockedMessage();
+      return;
+    }
+    Navigator.pushNamed(
+      context,
+      RouteNames.snapshotDetail,
+      arguments: snapshotId,
+    );
+  }
+
   Future<void> _confirmDelete(
     BuildContext context,
     String snapshotId,
   ) async {
+    if (_isComparing) {
+      _showComparingBlockedMessage();
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -86,114 +150,125 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
     final aiSettings =
         ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
 
-    return Scaffold(
-      appBar: AppTopBar(
-        title: '후보 비교',
-        actions: [
-          IconButton(
-            tooltip: '카메라',
-            onPressed: () => Navigator.pushReplacementNamed(
-              context,
-              RouteNames.cameraMatch,
+    return PopScope(
+      canPop: !_isComparing,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || !_isComparing) {
+          return;
+        }
+        final confirmed = await _confirmLeaveDuringComparison();
+        if (!confirmed || !context.mounted) {
+          return;
+        }
+        setState(() => _isComparing = false);
+        Navigator.pop(context, result);
+      },
+      child: Scaffold(
+        appBar: AppTopBar(
+          title: '후보 비교',
+          actions: [
+            IconButton(
+              tooltip: '카메라',
+              onPressed: _openCamera,
+              icon: const Icon(Icons.photo_camera_outlined),
             ),
-            icon: const Icon(Icons.photo_camera_outlined),
-          ),
-        ],
-      ),
-      body: snapshotsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stackTrace) =>
-            Center(child: Text('후보를 불러오지 못했습니다: $error')),
-        data: (snapshots) {
-          final compareResult = _visibleCompareResult(snapshots);
-          return SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                    children: [
-                      const _CompareHeader(),
-                      if (compareResult != null) ...[
-                        const SizedBox(height: 10),
-                        _AiCompareSummary(result: compareResult),
-                      ],
-                      const SizedBox(height: 12),
-                      for (var index = 0; index < 3; index++) ...[
-                        if (index >= snapshots.length)
-                          _EmptySlot(index: index)
-                        else
-                          _SnapshotSlot(
-                            index: index,
-                            snapshot: snapshots[index],
-                            isBest: compareResult?.bestSnapshotId ==
-                                snapshots[index].id,
-                            score: compareResult == null
-                                ? null
-                                : _scoreForSnapshot(
-                                    compareResult,
-                                    snapshots[index].id,
-                                  ),
-                            onTap: () => Navigator.pushNamed(
-                              context,
-                              RouteNames.snapshotDetail,
-                              arguments: snapshots[index].id,
-                            ),
-                            onDelete: () =>
-                                _confirmDelete(context, snapshots[index].id),
-                          ),
-                        if (index != 2) const SizedBox(height: 10),
-                      ],
-                    ],
-                  ),
-                ),
-                DecoratedBox(
-                  decoration: const BoxDecoration(
-                    color: AppTheme.surface,
-                    border: Border(top: BorderSide(color: AppTheme.line)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+          ],
+        ),
+        body: snapshotsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stackTrace) =>
+              Center(child: Text('후보를 불러오지 못했습니다: $error')),
+          data: (snapshots) {
+            final compareResult = _visibleCompareResult(snapshots);
+            return SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                       children: [
-                        FilledButton.icon(
-                          onPressed: snapshots.isEmpty || _isComparing
-                              ? null
-                              : () => _compareAi(snapshots),
-                          icon: _isComparing
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.auto_awesome_outlined),
-                          label: Text(
-                            _isComparing ? '비교 중...' : 'AI에게 3개 비교 요청',
-                          ),
-                        ),
-                        if (_isComparing) ...[
+                        const _CompareHeader(),
+                        if (compareResult != null) ...[
                           const SizedBox(height: 10),
-                          AiProcessingStatus(
-                            keyPrefix: 'compare',
-                            mode: aiSettings.mode,
-                            label: '후보 비교 중',
-                            localMessage:
-                                'Local Gemma가 후보 ${snapshots.length}개의 이미지와 색상 정보를 비교하고 있습니다.',
-                            cloudMessage: 'OpenAI 프록시 서버로 후보 비교 요청을 보내고 있습니다.',
-                          ),
+                          _AiCompareSummary(result: compareResult),
+                        ],
+                        const SizedBox(height: 12),
+                        for (var index = 0; index < 3; index++) ...[
+                          if (index >= snapshots.length)
+                            _EmptySlot(index: index)
+                          else
+                            _SnapshotSlot(
+                              index: index,
+                              snapshot: snapshots[index],
+                              isBest: compareResult?.bestSnapshotId ==
+                                  snapshots[index].id,
+                              score: compareResult == null
+                                  ? null
+                                  : _scoreForSnapshot(
+                                      compareResult,
+                                      snapshots[index].id,
+                                    ),
+                              isLocked: _isComparing,
+                              onBlockedTap: _showComparingBlockedMessage,
+                              onTap: () =>
+                                  _openSnapshotDetail(snapshots[index].id),
+                              onDelete: () =>
+                                  _confirmDelete(context, snapshots[index].id),
+                            ),
+                          if (index != 2) const SizedBox(height: 10),
                         ],
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          );
-        },
+                  DecoratedBox(
+                    decoration: const BoxDecoration(
+                      color: AppTheme.surface,
+                      border: Border(top: BorderSide(color: AppTheme.line)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: snapshots.isEmpty || _isComparing
+                                ? null
+                                : () => _compareAi(snapshots),
+                            icon: _isComparing
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.auto_awesome_outlined),
+                            label: Text(
+                              _isComparing ? '비교 중...' : 'AI에게 3개 비교 요청',
+                            ),
+                          ),
+                          if (_isComparing) ...[
+                            const SizedBox(height: 10),
+                            AiProcessingStatus(
+                              keyPrefix: 'compare',
+                              mode: aiSettings.mode,
+                              label: '후보 비교 중',
+                              localMessage:
+                                  'Local Gemma가 후보 ${snapshots.length}개의 이미지와 색상 정보를 비교하고 있습니다.',
+                              cloudMessage:
+                                  'OpenAI 프록시 서버로 후보 비교 요청을 보내고 있습니다.',
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -354,6 +429,8 @@ class _SnapshotSlot extends StatelessWidget {
     required this.snapshot,
     required this.isBest,
     required this.score,
+    required this.isLocked,
+    required this.onBlockedTap,
     required this.onTap,
     required this.onDelete,
   });
@@ -362,70 +439,75 @@ class _SnapshotSlot extends StatelessWidget {
   final OutfitSnapshot snapshot;
   final bool isBest;
   final int? score;
+  final bool isLocked;
+  final VoidCallback onBlockedTap;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final memo = snapshot.memo?.trim();
-    return Card(
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              _SnapshotThumbnail(
-                imagePath: snapshot.imagePath,
-                isBest: isBest,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return Opacity(
+      opacity: isLocked ? 0.68 : 1,
+      child: Card(
+        child: InkWell(
+          onTap: isLocked ? onBlockedTap : onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                _SnapshotThumbnail(
+                  imagePath: snapshot.imagePath,
+                  isBest: isBest,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '후보 ${index + 1}',
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        memo == null || memo.isEmpty ? '메모 없음' : memo,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _formatDate(snapshot.createdAt),
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
                   children: [
-                    Text(
-                      '후보 ${index + 1}',
-                      style: Theme.of(context).textTheme.labelMedium,
+                    if (score != null) ...[
+                      _CandidateScoreBadge(
+                        snapshotId: snapshot.id,
+                        score: score!,
+                        isBest: isBest,
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    IconButton(
+                      tooltip: '후보 삭제',
+                      onPressed: isLocked ? onBlockedTap : onDelete,
+                      icon: const Icon(Icons.delete_outline),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      memo == null || memo.isEmpty ? '메모 없음' : memo,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _formatDate(snapshot.createdAt),
-                      style: Theme.of(context).textTheme.bodyMedium,
+                    IconButton(
+                      tooltip: '상세 보기',
+                      onPressed: isLocked ? onBlockedTap : onTap,
+                      icon: const Icon(Icons.chevron_right),
                     ),
                   ],
                 ),
-              ),
-              Column(
-                children: [
-                  if (score != null) ...[
-                    _CandidateScoreBadge(
-                      snapshotId: snapshot.id,
-                      score: score!,
-                      isBest: isBest,
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  IconButton(
-                    tooltip: '후보 삭제',
-                    onPressed: onDelete,
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                  IconButton(
-                    tooltip: '상세 보기',
-                    onPressed: onTap,
-                    icon: const Icon(Icons.chevron_right),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
