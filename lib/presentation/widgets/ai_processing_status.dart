@@ -54,7 +54,7 @@ class _AiProcessingStatusState extends State<AiProcessingStatus> {
       key: prefix == null ? null : Key('$prefix-processing-status'),
       decoration: BoxDecoration(
         color: AppTheme.accentSoft,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.line),
       ),
       child: Padding(

@@ -18,7 +18,6 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -27,22 +26,28 @@ class EmptyState extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: AppTheme.surface,
-              border: Border.all(color: AppTheme.line),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.ink.withValues(alpha: 0.05),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
             child: Padding(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(28),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.secondary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
+                    decoration: const BoxDecoration(
+                      color: AppTheme.accentSoft,
+                      shape: BoxShape.circle,
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Icon(icon, size: 30, color: colors.primary),
+                      padding: const EdgeInsets.all(16),
+                      child: Icon(icon, size: 28, color: AppTheme.ink),
                     ),
                   ),
                   const SizedBox(height: 16),

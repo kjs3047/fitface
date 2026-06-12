@@ -130,11 +130,12 @@ class _RackPainter extends CustomPainter {
       rail,
     );
 
+    // 에디토리얼 무채색: 옷걸이를 흑백 톤으로 정돈해 색은 사진에만 남긴다.
     final colors = [
-      const Color(0xFFB78373),
-      const Color(0xFFD8C5B2),
-      const Color(0xFF5F6462),
-      const Color(0xFFE7DED1),
+      const Color(0xFFEDEDEA),
+      const Color(0xFFBFBFBA),
+      const Color(0xFF6E6E69),
+      const Color(0xFF9A9A95),
     ];
     for (var i = 0; i < 4; i++) {
       final left = size.width * (0.16 + i * 0.17);

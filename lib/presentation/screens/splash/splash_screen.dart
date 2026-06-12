@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/file_utils.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
 
@@ -40,35 +39,25 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppTheme.ink,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.all(18),
-                child: Icon(
-                  Icons.center_focus_strong,
-                  size: 42,
-                  color: Colors.white,
-                ),
-              ),
+            Text(
+              'EDITORIAL FITTING',
+              style: Theme.of(context).textTheme.labelMedium,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
             Text(
               'FitFace',
-              style: Theme.of(context).textTheme.displaySmall,
+              style: Theme.of(context).textTheme.displayMedium,
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               '얼굴을 겹쳐보는 피팅 도구',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 28),
             const SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
             ),
           ],
         ),

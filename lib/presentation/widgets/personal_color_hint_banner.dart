@@ -32,7 +32,7 @@ class PersonalColorHintBanner extends StatelessWidget {
         key: const Key('personal-color-hint-banner'),
         decoration: BoxDecoration(
           color: AppTheme.bronzeSoft,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppTheme.line),
         ),
         child: Padding(

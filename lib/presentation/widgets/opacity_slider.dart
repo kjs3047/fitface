@@ -20,7 +20,7 @@ class OpacitySlider extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.surface,
         border: Border.all(color: AppTheme.line),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
