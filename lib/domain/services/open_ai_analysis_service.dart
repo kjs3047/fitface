@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -11,11 +12,16 @@ class OpenAiAnalysisService implements AiEngineAdapter {
   OpenAiAnalysisService({
     required AiSettings settings,
     HttpClient? client,
+    this.requestTimeout = const Duration(seconds: 60),
   })  : _settings = settings,
-        _client = client ?? HttpClient();
+        _client = (client ?? HttpClient())
+          ..connectionTimeout = const Duration(seconds: 10);
 
   final AiSettings _settings;
   final HttpClient _client;
+
+  /// 프록시가 OpenAI를 다시 호출하므로 앱→프록시 요청은 넉넉하게 잡는다.
+  final Duration requestTimeout;
 
   @override
   String get engineName => 'openAi';
@@ -83,18 +89,25 @@ class OpenAiAnalysisService implements AiEngineAdapter {
       throw StateError('OpenAI API 프록시 주소가 설정되지 않았습니다.');
     }
     final uri = Uri.parse('$baseUrl$path');
-    final request = await _client.postUrl(uri);
-    request.headers.contentType = ContentType.json;
-    request.write(jsonEncode(body));
-    final response = await request.close();
-    final text = await utf8.decodeStream(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    try {
+      final request = await _client.postUrl(uri).timeout(requestTimeout);
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(requestTimeout);
+      final text = await utf8.decodeStream(response).timeout(requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException(
+          'OpenAI 프록시 요청 실패: ${response.statusCode} $text',
+          uri: uri,
+        );
+      }
+      return jsonDecode(text) as Map<String, dynamic>;
+    } on TimeoutException {
       throw HttpException(
-        'OpenAI 프록시 요청 실패: ${response.statusCode} $text',
+        'OpenAI 프록시 응답이 지연되어 요청을 중단했습니다.',
         uri: uri,
       );
     }
-    return jsonDecode(text) as Map<String, dynamic>;
   }
 
   AiAnalysisResult _resultFromResponse(
@@ -107,6 +120,11 @@ class OpenAiAnalysisService implements AiEngineAdapter {
       analysisMode: usedImage ? 'imageAndFeatures' : 'featuresOnly',
       createdAt: DateTime.now(),
     );
+  }
+
+  /// keep-alive 소켓이 누적되지 않도록 더 이상 쓰지 않을 때 호출한다.
+  void dispose() {
+    _client.close(force: true);
   }
 
   Future<String> _readSanitizedImageBase64(String imagePath) async {

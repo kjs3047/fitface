@@ -21,6 +21,7 @@ import '../../widgets/app_top_bar.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/face_overlay_widget.dart';
 import '../../widgets/opacity_slider.dart';
+import '../../widgets/personal_color_hint_banner.dart';
 
 class CameraMatchScreen extends ConsumerStatefulWidget {
   const CameraMatchScreen({super.key});
@@ -29,7 +30,8 @@ class CameraMatchScreen extends ConsumerStatefulWidget {
   ConsumerState<CameraMatchScreen> createState() => _CameraMatchScreenState();
 }
 
-class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
+class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
+    with WidgetsBindingObserver {
   final _captureKey = GlobalKey();
   CameraController? _controller;
   bool _isInitializing = true;
@@ -38,19 +40,56 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
   bool _isAiPreviewing = false;
   String? _error;
 
+  /// 직전 화면(얼굴 촬영 등)이 카메라를 막 해제한 직후 재진입하면 초기화가
+  /// 경합할 수 있어, 토큰으로 가장 최근 초기화만 유효하게 만든다.
+  int _cameraInitToken = 0;
+
+  /// 얼굴 촬영(전면 카메라) 해제와 후면 카메라 초기화가 겹쳐 첫 시도가
+  /// 실패하면, 하드웨어가 풀릴 시간을 주고 한 번 자동 재시도한다.
+  bool _didAutoRetry = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeCamera();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final controller = _controller;
+      if (!_isInitializing &&
+          (controller == null || !controller.value.isInitialized)) {
+        _initializeCamera();
+      }
+      return;
+    }
+
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) {
+      return;
+    }
+    if (state == AppLifecycleState.inactive) {
+      _cameraInitToken++;
+      controller.dispose();
+      _controller = null;
+    }
+  }
+
   Future<void> _initializeCamera() async {
+    if (!mounted) {
+      return;
+    }
+    final initToken = ++_cameraInitToken;
+    CameraController? nextController;
     setState(() {
       _isInitializing = true;
       _permissionDenied = false;
@@ -58,6 +97,9 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
     });
     try {
       final permission = await Permission.camera.request();
+      if (!mounted || initToken != _cameraInitToken) {
+        return;
+      }
       if (!permission.isGranted) {
         setState(() {
           _permissionDenied = true;
@@ -66,26 +108,53 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
         return;
       }
       final cameras = await availableCameras();
+      if (!mounted || initToken != _cameraInitToken) {
+        return;
+      }
+      if (cameras.isEmpty) {
+        throw StateError('사용 가능한 카메라가 없습니다.');
+      }
       final camera = cameras.firstWhere(
         (item) => item.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(
+      nextController = CameraController(
         camera,
         ResolutionPreset.high,
         enableAudio: false,
       );
-      await controller.initialize();
-      await _controller?.dispose();
-      if (!mounted) {
+      await nextController.initialize();
+      if (!mounted || initToken != _cameraInitToken) {
+        await nextController.dispose();
         return;
       }
+      final previousController = _controller;
+      final initializedController = nextController;
+      nextController = null;
+      _didAutoRetry = false;
       setState(() {
-        _controller = controller;
+        _controller = initializedController;
         _isInitializing = false;
       });
+      try {
+        await previousController?.dispose();
+      } catch (_) {
+        // 새 프리뷰 교체는 이미 성공했으므로 이전 컨트롤러 정리는 best effort.
+      }
     } catch (error) {
-      if (!mounted) {
+      await nextController?.dispose();
+      if (!mounted || initToken != _cameraInitToken) {
+        return;
+      }
+      // 첫 실패는 직전 화면의 카메라 해제와 겹친 일시적 경합일 수 있으므로
+      // 잠깐 기다렸다 한 번만 자동 재시도한다.
+      if (!_didAutoRetry) {
+        _didAutoRetry = true;
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        if (!mounted || initToken != _cameraInitToken) {
+          return;
+        }
+        await _initializeCamera();
         return;
       }
       setState(() {
@@ -93,6 +162,12 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
         _isInitializing = false;
       });
     }
+  }
+
+  /// 사용자가 직접 누른 재시도. 자동 재시도 기회를 다시 부여한다.
+  Future<void> _retryCamera() {
+    _didAutoRetry = false;
+    return _initializeCamera();
   }
 
   Future<void> _runAiPreview() async {
@@ -155,6 +230,16 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
                   children: [
                     for (final tag in result.tags) Chip(label: Text(tag)),
                   ],
+                ),
+              ],
+              if (!result.usedPersonalColor) ...[
+                const SizedBox(height: 12),
+                PersonalColorHintBanner(
+                  visible: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushNamed(context, RouteNames.personalColor);
+                  },
                 ),
               ],
             ],
@@ -407,7 +492,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
         message: _error!,
         icon: Icons.error_outline,
         action: OutlinedButton(
-          onPressed: _initializeCamera,
+          onPressed: _retryCamera,
           child: const Text('재시도'),
         ),
       );
@@ -418,7 +503,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen> {
         title: '카메라 준비 중',
         message: '잠시 후 다시 시도해주세요.',
         action: OutlinedButton(
-          onPressed: _initializeCamera,
+          onPressed: _retryCamera,
           child: const Text('재시도'),
         ),
       );

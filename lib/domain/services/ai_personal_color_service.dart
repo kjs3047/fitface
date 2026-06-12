@@ -4,7 +4,6 @@ import '../../data/models/personal_color_result.dart';
 import 'image_feature_extractor.dart';
 import 'local_gemma_personal_color_service.dart';
 import 'mock_personal_color_service.dart';
-import 'open_ai_personal_color_service.dart';
 import 'personal_color_engine_adapter.dart';
 import 'personal_color_prompt_builder.dart';
 import 'personal_color_service.dart';
@@ -131,7 +130,7 @@ class AiPersonalColorService implements PersonalColorService {
         return _localGemmaService ??
             LocalGemmaPersonalColorService(settings: settings);
       case AiEngineMode.openAi:
-        return _openAiService ?? OpenAiPersonalColorService(settings: settings);
+        return _openAiService;
       case AiEngineMode.off:
       case AiEngineMode.mock:
         return null;

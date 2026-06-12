@@ -14,3 +14,6 @@ android/.gradle/
 *.log
 .env
 .env.local
+.omc/
+*.zip
+*.apk

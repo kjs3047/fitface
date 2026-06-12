@@ -82,31 +82,43 @@ class HttpOpenAiResponsesClient implements OpenAiResponsesClient {
     required String apiKey,
     HttpClient? httpClient,
     Uri? endpoint,
+    this.requestTimeout = const Duration(seconds: 45),
   })  : _apiKey = apiKey,
-        _httpClient = httpClient ?? HttpClient(),
+        _httpClient = (httpClient ?? HttpClient())
+          ..connectionTimeout = const Duration(seconds: 10),
         _endpoint =
             endpoint ?? Uri.parse('https://api.openai.com/v1/responses');
 
   final String _apiKey;
   final HttpClient _httpClient;
   final Uri _endpoint;
+  final Duration requestTimeout;
 
   @override
   Future<Map<String, dynamic>> createResponse(Map<String, dynamic> body) async {
-    final request = await _httpClient.postUrl(_endpoint);
-    request.headers.contentType = ContentType.json;
-    request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_apiKey');
-    request.write(jsonEncode(body));
-    final response = await request.close();
-    final text = await utf8.decodeStream(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw OpenAiProxyException(
-        'OPENAI_REQUEST_FAILED',
-        'OpenAI request failed: ${response.statusCode} $text',
-        HttpStatus.badGateway,
+    try {
+      final request =
+          await _httpClient.postUrl(_endpoint).timeout(requestTimeout);
+      request.headers.contentType = ContentType.json;
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_apiKey');
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(requestTimeout);
+      final text = await utf8.decodeStream(response).timeout(requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw OpenAiProxyException(
+          'OPENAI_REQUEST_FAILED',
+          'OpenAI request failed: ${response.statusCode} $text',
+          HttpStatus.badGateway,
+        );
+      }
+      return jsonDecode(text) as Map<String, dynamic>;
+    } on TimeoutException {
+      throw const OpenAiProxyException(
+        'OPENAI_TIMEOUT',
+        'OpenAI request timed out.',
+        HttpStatus.gatewayTimeout,
       );
     }
-    return jsonDecode(text) as Map<String, dynamic>;
   }
 }
 

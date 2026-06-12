@@ -1,5 +1,6 @@
 import '../../data/models/image_feature_summary.dart';
 import '../../data/models/outfit_snapshot.dart';
+import '../../data/models/personal_color_result.dart';
 
 class AiPromptBuilder {
   const AiPromptBuilder();
@@ -8,13 +9,16 @@ class AiPromptBuilder {
     required OutfitSnapshot snapshot,
     required ImageFeatureSummary? features,
     required bool includeImage,
+    PersonalColorResult? personalColor,
   }) {
     final memo = snapshot.memo?.trim();
+    final personalColorLine = personalColorPromptLine(personalColor);
     return [
       '역할: FitFace 스타일링 보조 AI.',
       '목표: 얼굴 자체가 아니라 옷 색감, 매장 조명, 얼굴 오버레이와의 조화를 평가한다.',
       if (includeImage) '입력 이미지: FitFace 스냅샷 1장.',
       if (features != null) '앱 사전 색상분석: ${features.toPromptText()}',
+      if (personalColorLine != null) personalColorLine,
       if (memo != null && memo.isNotEmpty) '사용자 메모: $memo',
       '금지: 얼굴 외모 평가, 피부 품질 평가, 절대적 단정.',
       '출력은 반드시 JSON 객체 하나만 사용한다. 설명 문장이나 markdown은 쓰지 않는다.',
@@ -27,12 +31,15 @@ class AiPromptBuilder {
   String buildLocalSnapshotPrompt({
     required OutfitSnapshot snapshot,
     required ImageFeatureSummary? features,
+    PersonalColorResult? personalColor,
   }) {
     final memo = snapshot.memo?.trim();
+    final personalColorLine = personalColorPromptLine(personalColor);
     return [
       '역할: FitFace Local Gemma 스타일 판단.',
       '입력: 이미지 사전 색상정보만 사용한다.',
       '색상정보: ${_compactFeatureText(features)}',
+      if (personalColorLine != null) personalColorLine,
       if (memo != null && memo.isNotEmpty) '메모: $memo',
       '금지: 얼굴 외모, 피부 품질, 미모, 결점 평가.',
       '출력은 JSON 객체 하나만 사용한다.',
@@ -47,11 +54,14 @@ class AiPromptBuilder {
     required List<OutfitSnapshot> snapshots,
     required Map<String, ImageFeatureSummary> featuresBySnapshotId,
     required bool includeImages,
+    PersonalColorResult? personalColor,
   }) {
+    final personalColorLine = personalColorPromptLine(personalColor);
     final lines = <String>[
       '역할: FitFace 후보 비교 AI.',
       '목표: 저장 후보 중 옷 색감과 얼굴 오버레이 조화가 가장 안정적인 후보를 고른다.',
       if (includeImages) '입력 이미지: 후보 ${snapshots.length}장.',
+      if (personalColorLine != null) personalColorLine,
       '후보별 사전 색상분석:',
     ];
     for (var index = 0; index < snapshots.length; index++) {
@@ -78,10 +88,13 @@ class AiPromptBuilder {
   String buildLocalComparePrompt({
     required List<OutfitSnapshot> snapshots,
     required Map<String, ImageFeatureSummary> featuresBySnapshotId,
+    PersonalColorResult? personalColor,
   }) {
+    final personalColorLine = personalColorPromptLine(personalColor);
     final lines = <String>[
       '역할: FitFace Local Gemma 후보 비교.',
       '입력: 후보별 사전 색상정보만 사용한다.',
+      if (personalColorLine != null) personalColorLine,
     ];
     for (var index = 0; index < snapshots.length; index++) {
       final snapshot = snapshots[index];
@@ -101,6 +114,35 @@ class AiPromptBuilder {
     lines.add('bestSnapshotId는 위 후보 id 중 하나로 작성한다.');
     lines.add('candidateScores와 candidateComments에는 모든 후보 id를 포함한다.');
     return lines.join('\n');
+  }
+
+  /// 저장된 퍼스널 컬러 진단이 있으면 프롬프트에 넣을 한 줄로 변환한다.
+  /// 결과가 없거나 type이 비어 있으면 null을 반환해 프롬프트에서 생략한다.
+  String? personalColorPromptLine(PersonalColorResult? personalColor) {
+    if (personalColor == null) {
+      return null;
+    }
+    final type = personalColor.type.trim();
+    if (type.isEmpty) {
+      return null;
+    }
+    final recommended = personalColor.recommendedColors
+        .where((color) => color.trim().isNotEmpty)
+        .take(5)
+        .join(', ');
+    final avoid = personalColor.avoidColors
+        .where((color) => color.trim().isNotEmpty)
+        .take(5)
+        .join(', ');
+    final parts = <String>['사용자 퍼스널 컬러 진단: $type'];
+    if (recommended.isNotEmpty) {
+      parts.add('추천 색=[$recommended]');
+    }
+    if (avoid.isNotEmpty) {
+      parts.add('주의 색=[$avoid]');
+    }
+    parts.add('이 진단을 옷 색감 조화 판단의 참고 정보로 함께 고려한다.');
+    return parts.join('; ');
   }
 
   String _compactFeatureText(ImageFeatureSummary? features) {

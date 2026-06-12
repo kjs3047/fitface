@@ -239,6 +239,96 @@ void main() {
   });
 
   test(
+      'AiAnalysisCoordinator injects saved personal color into snapshot prompt',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_pc_inject_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 60, height: 60);
+    img.fill(source, color: img.ColorRgb8(140, 160, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+    final openAiEngine = _RecordingOpenAiEngine();
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: openAiEngine,
+      personalColor: const PersonalColorResult(
+        type: '여름 쿨',
+        recommendedColors: ['소프트 블루', '라벤더'],
+        avoidColors: ['강한 오렌지'],
+        comment: '쿨톤 진단입니다.',
+      ),
+    );
+
+    final result = await coordinator.analyzeSnapshot(
+      OutfitSnapshot(
+        id: 'candidate',
+        imagePath: sourceFile.path,
+        createdAt: DateTime(2026),
+      ),
+    );
+
+    expect(openAiEngine.lastSnapshotRequest?.prompt, contains('여름 쿨'));
+    expect(openAiEngine.lastSnapshotRequest?.prompt, contains('소프트 블루'));
+    expect(result.usedPersonalColor, isTrue);
+  });
+
+  test(
+      'AiAnalysisCoordinator omits personal color line when none is saved',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_pc_absent_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 60, height: 60);
+    img.fill(source, color: img.ColorRgb8(140, 160, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+    final openAiEngine = _RecordingOpenAiEngine();
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: openAiEngine,
+    );
+
+    final result = await coordinator.analyzeSnapshot(
+      OutfitSnapshot(
+        id: 'candidate',
+        imagePath: sourceFile.path,
+        createdAt: DateTime(2026),
+      ),
+    );
+
+    expect(
+      openAiEngine.lastSnapshotRequest?.prompt,
+      isNot(contains('퍼스널 컬러 진단')),
+    );
+    expect(result.usedPersonalColor, isFalse);
+  });
+
+  test(
       'AiAnalysisCoordinator surfaces missing OpenAI consent instead of fallback',
       () async {
     final coordinator = AiAnalysisCoordinator(
@@ -861,9 +951,15 @@ class _FakeHttpClient extends Fake implements HttpClient {
   ) handler;
 
   @override
+  Duration? connectionTimeout;
+
+  @override
   Future<HttpClientRequest> postUrl(Uri url) async {
     return _FakeHttpClientRequest(url, handler);
   }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 class _FakeHttpClientRequest extends Fake implements HttpClientRequest {

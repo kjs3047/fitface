@@ -14,6 +14,7 @@ class AiAnalysisResult {
     this.analysisMode = 'imageAndFeatures',
     this.createdAt,
     this.rawFeatureSummary,
+    this.usedPersonalColor = false,
   });
 
   final int score;
@@ -31,6 +32,10 @@ class AiAnalysisResult {
   final DateTime? createdAt;
   final Map<String, dynamic>? rawFeatureSummary;
 
+  /// 저장된 퍼스널 컬러 결과가 분석 프롬프트에 반영됐는지 여부.
+  /// false면 UI에서 "퍼스널 컬러를 설정하면 더 정확해집니다" 안내를 띄운다.
+  final bool usedPersonalColor;
+
   AiAnalysisResult copyWith({
     int? score,
     String? comment,
@@ -46,6 +51,7 @@ class AiAnalysisResult {
     String? analysisMode,
     DateTime? createdAt,
     Map<String, dynamic>? rawFeatureSummary,
+    bool? usedPersonalColor,
   }) {
     return AiAnalysisResult(
       score: score ?? this.score,
@@ -62,6 +68,7 @@ class AiAnalysisResult {
       analysisMode: analysisMode ?? this.analysisMode,
       createdAt: createdAt ?? this.createdAt,
       rawFeatureSummary: rawFeatureSummary ?? this.rawFeatureSummary,
+      usedPersonalColor: usedPersonalColor ?? this.usedPersonalColor,
     );
   }
 
@@ -81,6 +88,7 @@ class AiAnalysisResult {
       'analysisMode': analysisMode,
       'createdAt': createdAt?.toIso8601String(),
       'rawFeatureSummary': rawFeatureSummary,
+      'usedPersonalColor': usedPersonalColor,
     };
   }
 
@@ -108,6 +116,7 @@ class AiAnalysisResult {
       analysisMode: json['analysisMode'] as String? ?? 'imageAndFeatures',
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? ''),
       rawFeatureSummary: json['rawFeatureSummary'] as Map<String, dynamic>?,
+      usedPersonalColor: json['usedPersonalColor'] as bool? ?? false,
     );
   }
 

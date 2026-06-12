@@ -12,6 +12,7 @@ import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
 import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
+import '../../widgets/personal_color_hint_banner.dart';
 import 'snapshot_image_viewer_screen.dart';
 
 class SnapshotDetailScreen extends ConsumerStatefulWidget {
@@ -421,6 +422,11 @@ class _SnapshotAiResultCard extends StatelessWidget {
                 result.suggestions.first,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+            ],
+            // 캐시된 결과는 퍼스널 컬러 반영 여부를 알 수 없어 안내하지 않는다.
+            if (result.engine != 'cached' && !result.usedPersonalColor) ...[
+              const SizedBox(height: 12),
+              const PersonalColorHintBanner(visible: true),
             ],
           ],
         ),

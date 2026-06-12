@@ -13,6 +13,7 @@ import '../../../providers/snapshot_provider.dart';
 import '../../widgets/ai_processing_status.dart';
 import '../../routes/route_names.dart';
 import '../../widgets/app_top_bar.dart';
+import '../../widgets/personal_color_hint_banner.dart';
 
 class CompareScreen extends ConsumerStatefulWidget {
   const CompareScreen({super.key});
@@ -216,6 +217,12 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
                                   _confirmDelete(context, snapshots[index].id),
                             ),
                           if (index != 2) const SizedBox(height: 10),
+                        ],
+                        // 후보 슬롯 위치를 밀어내지 않도록 안내 배너는 목록 끝에 둔다.
+                        if (compareResult != null &&
+                            !compareResult.usedPersonalColor) ...[
+                          const SizedBox(height: 12),
+                          const PersonalColorHintBanner(visible: true),
                         ],
                       ],
                     ),

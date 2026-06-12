@@ -320,6 +320,8 @@ class SettingsScreen extends ConsumerWidget {
     }
     await ref.read(snapshotProvider.notifier).clearAiResults();
     await ref.read(personalColorRepositoryProvider).clearResult();
+    // 삭제된 진단이 이후 AI 판단 프롬프트에 남지 않도록 캐시를 무효화한다.
+    ref.invalidate(savedPersonalColorProvider);
     final profile = ref.read(userProfileProvider).valueOrNull;
     if (profile?.personalColorType != null) {
       await ref.read(userProfileProvider.notifier).clearPersonalColorType();

@@ -245,6 +245,8 @@ class _PersonalColorScreenState extends ConsumerState<PersonalColorScreen> {
       await ref
           .read(userProfileProvider.notifier)
           .savePersonalColorType(result.type);
+      // 새 진단을 이후 AI 판단 프롬프트에 반영하기 위해 캐시를 무효화한다.
+      ref.invalidate(savedPersonalColorProvider);
       if (!mounted) {
         return;
       }
