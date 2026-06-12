@@ -4,6 +4,24 @@ import 'package:fitface/openai_proxy/openai_proxy_server.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('environment config strips shell-style quotes', () {
+    final config = OpenAiProxyConfig.fromEnvironment({
+      'OPENAI_API_KEY': '"test-key"',
+      'OPENAI_MODEL': "'gpt-test'",
+      'FITFACE_PROXY_HOST': '"0.0.0.0"',
+      'FITFACE_PROXY_PORT': '"8787"',
+      'FITFACE_PROXY_MAX_BODY_BYTES': "'4096'",
+      'FITFACE_PROXY_MAX_IMAGES': '"2"',
+    });
+
+    expect(config.apiKey, 'test-key');
+    expect(config.model, 'gpt-test');
+    expect(config.host, '0.0.0.0');
+    expect(config.port, 8787);
+    expect(config.maxBodyBytes, 4096);
+    expect(config.maxImages, 2);
+  });
+
   test('snapshot endpoint builds a Responses API image request', () async {
     late Map<String, dynamic> captured;
     final proxy = FitFaceOpenAiProxy(

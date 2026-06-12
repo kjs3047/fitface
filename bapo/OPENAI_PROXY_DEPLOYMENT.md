@@ -92,6 +92,40 @@ Ubuntu/Debian 직접 실행:
 
 중요: Dart 앱은 프로젝트 루트의 `.env` 파일을 자동으로 읽지 않는다. `dart run bin/fitface_openai_proxy.dart`만 실행하면 `.env` 파일이 있어도 적용되지 않는다. 반드시 shell, Docker Compose, systemd 중 하나가 환경변수로 주입해야 한다.
 
+### 환경변수 작성 규칙
+
+환경변수 파일에 값을 직접 쓸 때는 따옴표 없이 쓰는 것을 권장한다.
+
+권장:
+
+```text
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.4-mini
+FITFACE_PROXY_HOST=0.0.0.0
+FITFACE_PROXY_PORT=8787
+```
+
+피해야 할 예:
+
+```text
+FITFACE_PROXY_HOST="0.0.0.0"
+FITFACE_PROXY_PORT="8787"
+```
+
+PowerShell에서 아래처럼 쓰는 것은 괜찮다. 이때의 따옴표는 PowerShell 문법이고 값에 포함되지 않는다.
+
+```powershell
+$env:FITFACE_PROXY_HOST="0.0.0.0"
+```
+
+하지만 아래처럼 따옴표를 한 번 더 넣으면 값 자체가 `"0.0.0.0"`이 되어 서버가 시작하지 못할 수 있다.
+
+```powershell
+$env:FITFACE_PROXY_HOST='"0.0.0.0"'
+```
+
+최신 프록시 코드는 바깥쪽 따옴표를 한 번 제거하도록 보완되어 있지만, 배포 문서와 운영 환경에서는 따옴표 없는 값을 기준으로 관리한다.
+
 ### Dart SDK 직접 설치 시 `.env` 처리 기준
 
 Ubuntu/Debian 서버에 Dart SDK를 직접 설치하는 것과 `.env` 파일을 등록하는 것은 별개의 단계다.
@@ -124,7 +158,8 @@ Docker Compose 실행:
 ```bash
 git clone https://github.com/kjs3047/fitface.git
 cd fitface
-git checkout feature/ai-integration
+git checkout main
+git pull --ff-only
 ```
 
 ### 2. `.env` 파일 만들기
@@ -305,7 +340,8 @@ dart --version
 ```bash
 git clone https://github.com/kjs3047/fitface.git /opt/fitface
 cd /opt/fitface
-git checkout feature/ai-integration
+git checkout main
+git pull --ff-only
 dart pub get
 
 export OPENAI_API_KEY="여기에_OpenAI_API_Key"
@@ -423,11 +459,50 @@ $env:FITFACE_PROXY_PORT="8787"
 dart run bin/fitface_openai_proxy.dart
 ```
 
+`.env.local` 파일을 만들어 두고 PowerShell에서 읽어 실행할 수도 있다.
+
+`.env.local` 예:
+
+```text
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.4-mini
+FITFACE_PROXY_HOST=0.0.0.0
+FITFACE_PROXY_PORT=8787
+```
+
+PowerShell에서 `.env.local` 로딩:
+
+```powershell
+cd C:\dev\12121212
+
+Get-Content .env.local | Where-Object { $_ -match '^\s*[^#].+=' } | ForEach-Object {
+  $k, $v = $_ -split '=', 2
+  $value = $v.Trim()
+  if (
+    ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+    ($value.StartsWith("'") -and $value.EndsWith("'"))
+  ) {
+    $value = $value.Substring(1, $value.Length - 2).Trim()
+  }
+  Set-Item -Path "Env:$($k.Trim())" -Value $value
+}
+
+dart run bin/fitface_openai_proxy.dart
+```
+
+PC에서 먼저 확인:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/health
+```
+
 PC IP가 `192.168.202.18`이면 휴대폰 앱에는 다음을 입력한다.
 
 ```text
 http://192.168.202.18:8787
 ```
+
+휴대폰이 연결하려면 Windows Defender Firewall에서 TCP `8787` 인바운드가 허용되어 있어야 한다. PC에서는 `127.0.0.1`로 성공하지만 휴대폰에서 실패한다면 방화벽, PC IP, 같은 Wi-Fi/VPN 여부를 먼저 확인한다.
 
 ## 앱 설정
 
@@ -577,6 +652,7 @@ OpenAI 프록시 연결이 확인되었습니다.
 - `curl http://서버IP:8787/health`가 성공하는지
 - `FITFACE_PROXY_HOST=0.0.0.0`인지
 - NAS/서버 방화벽에서 TCP `8787`이 열려 있는지
+- Windows PC에서 실행 중이면 Windows Defender Firewall에서 TCP `8787` 인바운드가 허용되어 있는지
 - 휴대폰과 서버가 같은 네트워크 또는 VPN에 있는지
 - 앱에 `127.0.0.1`이 아니라 서버 IP를 넣었는지
 
@@ -594,6 +670,20 @@ http://127.0.0.1:8787
 http://192.168.0.20:8787
 ```
 
+Windows PC에서 서버 IP 확인:
+
+```powershell
+ipconfig
+```
+
+`IPv4 Address` 또는 `IPv4 주소` 항목의 사설 IP를 앱에 넣는다.
+
+서버가 실제로 포트를 열었는지 확인:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8787 -State Listen
+```
+
 ### 프록시 시작 실패
 
 확인할 것:
@@ -602,10 +692,111 @@ http://192.168.0.20:8787
 - 포트 `8787`을 이미 다른 프로세스가 쓰는지
 - Docker container 로그 또는 systemd 로그에 오류가 있는지
 
+#### `MISSING_OPENAI_API_KEY: OPENAI_API_KEY is required.`
+
+원인:
+
+```text
+OPENAI_API_KEY가 현재 실행 프로세스의 환경변수로 들어가지 않았다.
+```
+
+자주 발생하는 경우:
+
+- `.env` 또는 `.env.local` 파일만 만들고 `dart run bin/fitface_openai_proxy.dart`를 바로 실행한 경우
+- PowerShell을 새로 열었는데 환경변수를 다시 로딩하지 않은 경우
+- systemd 서비스 파일에 `EnvironmentFile` 경로가 빠졌거나 파일 권한/경로가 틀린 경우
+
+PowerShell 임시 해결:
+
+```powershell
+$env:OPENAI_API_KEY="sk-..."
+$env:OPENAI_MODEL="gpt-5.4-mini"
+$env:FITFACE_PROXY_HOST="0.0.0.0"
+$env:FITFACE_PROXY_PORT="8787"
+
+dart run bin/fitface_openai_proxy.dart
+```
+
+Bash 임시 해결:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-5.4-mini"
+export FITFACE_PROXY_HOST="0.0.0.0"
+export FITFACE_PROXY_PORT="8787"
+
+dart run bin/fitface_openai_proxy.dart
+```
+
+systemd 확인:
+
+```bash
+sudo systemctl cat fitface-openai-proxy
+sudo ls -l /etc/fitface-openai-proxy.env
+sudo systemctl restart fitface-openai-proxy
+journalctl -u fitface-openai-proxy -n 100 --no-pager
+```
+
+#### `SocketException: Failed host lookup: '"0.0.0.0"'`
+
+원인:
+
+```text
+FITFACE_PROXY_HOST 값에 따옴표가 문자 그대로 포함되어 있다.
+```
+
+정상 값:
+
+```text
+0.0.0.0
+```
+
+잘못된 값:
+
+```text
+"0.0.0.0"
+```
+
+PowerShell에서 현재 값 확인:
+
+```powershell
+Write-Output "<$env:FITFACE_PROXY_HOST>"
+```
+
+`<"0.0.0.0">`처럼 보이면 잘못 들어간 것이다. 다시 설정한다.
+
+```powershell
+$env:FITFACE_PROXY_HOST="0.0.0.0"
+$env:FITFACE_PROXY_PORT="8787"
+dart run bin/fitface_openai_proxy.dart
+```
+
+Bash에서 현재 값 확인:
+
+```bash
+printf '<%s>\n' "$FITFACE_PROXY_HOST"
+```
+
+`<"0.0.0.0">`처럼 보이면 환경변수 파일에서 따옴표를 제거한다.
+
 포트 확인:
 
 ```bash
 sudo ss -ltnp | grep 8787
+```
+
+Windows 포트 확인:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8787 -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess
+$targetPid = 12345
+Get-CimInstance Win32_Process -Filter "ProcessId=$targetPid" | Select-Object ProcessId,Name,CommandLine
+```
+
+`12345`는 위 명령에서 확인한 `OwningProcess` 값으로 바꾼다. 해당 PID가 FitFace 프록시 서버가 맞을 때만 종료한다.
+
+```powershell
+Stop-Process -Id $targetPid
 ```
 
 ### OpenAI 요청 실패

@@ -6,12 +6,14 @@ class OpenAiProxyConfig {
   const OpenAiProxyConfig({
     required this.apiKey,
     this.model = 'gpt-5.4-mini',
+    this.host = '127.0.0.1',
+    this.port = 8787,
     this.maxBodyBytes = 12 * 1024 * 1024,
     this.maxImages = 3,
   });
 
   factory OpenAiProxyConfig.fromEnvironment(Map<String, String> env) {
-    final apiKey = env['OPENAI_API_KEY']?.trim();
+    final apiKey = _envValue(env, 'OPENAI_API_KEY');
     if (apiKey == null || apiKey.isEmpty) {
       throw const OpenAiProxyException(
         'MISSING_OPENAI_API_KEY',
@@ -19,21 +21,41 @@ class OpenAiProxyConfig {
         HttpStatus.internalServerError,
       );
     }
+    final model = _envValue(env, 'OPENAI_MODEL');
+    final host = _envValue(env, 'FITFACE_PROXY_HOST');
+    final port = _envValue(env, 'FITFACE_PROXY_PORT');
+    final maxBodyBytes = _envValue(env, 'FITFACE_PROXY_MAX_BODY_BYTES');
+    final maxImages = _envValue(env, 'FITFACE_PROXY_MAX_IMAGES');
+
     return OpenAiProxyConfig(
       apiKey: apiKey,
-      model: env['OPENAI_MODEL']?.trim().isNotEmpty == true
-          ? env['OPENAI_MODEL']!.trim()
-          : 'gpt-5.4-mini',
-      maxBodyBytes: int.tryParse(env['FITFACE_PROXY_MAX_BODY_BYTES'] ?? '') ??
-          12 * 1024 * 1024,
-      maxImages: int.tryParse(env['FITFACE_PROXY_MAX_IMAGES'] ?? '') ?? 3,
+      model: model?.isNotEmpty == true ? model! : 'gpt-5.4-mini',
+      host: host?.isNotEmpty == true ? host! : '127.0.0.1',
+      port: int.tryParse(port ?? '') ?? 8787,
+      maxBodyBytes: int.tryParse(maxBodyBytes ?? '') ?? 12 * 1024 * 1024,
+      maxImages: int.tryParse(maxImages ?? '') ?? 3,
     );
   }
 
   final String apiKey;
   final String model;
+  final String host;
+  final int port;
   final int maxBodyBytes;
   final int maxImages;
+}
+
+String? _envValue(Map<String, String> env, String key) {
+  final value = env[key]?.trim();
+  if (value == null || value.length < 2) {
+    return value;
+  }
+  final first = value[0];
+  final last = value[value.length - 1];
+  if ((first == '"' && last == '"') || (first == "'" && last == "'")) {
+    return value.substring(1, value.length - 1).trim();
+  }
+  return value;
 }
 
 class OpenAiProxyException implements Exception {
