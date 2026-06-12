@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fitface/core/constants/storage_keys.dart';
 import 'package:fitface/core/errors/app_exception.dart';
 import 'package:fitface/data/local/local_file_storage.dart';
 import 'package:fitface/data/models/ai_settings.dart';
@@ -131,5 +132,38 @@ void main() {
 
     await repository.clearSettings();
     expect((await repository.loadSettings()).mode, AiEngineMode.mock);
+  });
+
+  test('LocalFileStorage falls back when metadata is corrupted', () async {
+    // 쓰기 도중 크래시로 손상된 JSON을 흉내 낸다.
+    await storage.metadataFile(StorageKeys.snapshotsJson).writeAsString(
+          '{ this is not valid json',
+        );
+    await storage
+        .metadataFile(StorageKeys.profileJson)
+        .writeAsString('broken');
+
+    expect(await storage.readJsonList(StorageKeys.snapshotsJson), isEmpty);
+    expect(await storage.readJsonMap(StorageKeys.profileJson), isNull);
+
+    // 폴백 후에도 정상 쓰기/읽기가 이어진다.
+    await storage.writeJsonList(StorageKeys.snapshotsJson, [
+      {'id': 'a'},
+    ]);
+    final reloaded = await storage.readJsonList(StorageKeys.snapshotsJson);
+    expect(reloaded, hasLength(1));
+    expect((reloaded.first as Map)['id'], 'a');
+  });
+
+  test('LocalFileStorage write leaves no leftover temp file', () async {
+    await storage.writeJsonMap(StorageKeys.profileJson, {'id': 'x'});
+    final tempFile = File(
+      '${storage.metadataFile(StorageKeys.profileJson).path}.tmp',
+    );
+    expect(await tempFile.exists(), isFalse);
+    expect(
+      (await storage.readJsonMap(StorageKeys.profileJson))?['id'],
+      'x',
+    );
   });
 }

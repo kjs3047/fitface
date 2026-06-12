@@ -52,6 +52,19 @@ class AiSettingsNotifier extends StateNotifier<AsyncValue<AiSettings>> {
     );
   }
 
+  Future<void> setOpenAiProxyToken(String? value) async {
+    final current = state.value ?? await _repository.loadSettings();
+    final normalized = value == null || value.trim().isEmpty ? null : value.trim();
+    state = AsyncValue.data(
+      await _repository.saveSettings(
+        current.copyWith(
+          openAiProxyToken: normalized,
+          clearOpenAiProxyToken: normalized == null,
+        ),
+      ),
+    );
+  }
+
   Future<void> setLocalModel({
     String? path,
     String? name,

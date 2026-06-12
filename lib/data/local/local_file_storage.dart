@@ -41,7 +41,13 @@ class LocalFileStorage {
     if (!await file.exists()) {
       return null;
     }
-    return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      // 쓰기 도중 크래시 등으로 손상된 파일은 없는 것으로 취급한다.
+      return null;
+    }
   }
 
   Future<List<dynamic>> readJsonList(String fileName) async {
@@ -49,17 +55,31 @@ class LocalFileStorage {
     if (!await file.exists()) {
       return const [];
     }
-    return jsonDecode(await file.readAsString()) as List<dynamic>;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      return decoded is List<dynamic> ? decoded : const [];
+    } on FormatException {
+      // 손상된 메타데이터는 빈 목록으로 폴백해 로드가 영구 실패하지 않게 한다.
+      return const [];
+    }
   }
 
   Future<void> writeJsonMap(String fileName, Map<String, dynamic> value) async {
-    await metadataDirectory.create(recursive: true);
-    await metadataFile(fileName).writeAsString(jsonEncode(value));
+    await _writeAtomically(fileName, jsonEncode(value));
   }
 
   Future<void> writeJsonList(String fileName, List<dynamic> value) async {
+    await _writeAtomically(fileName, jsonEncode(value));
+  }
+
+  /// 임시 파일에 먼저 쓰고 flush한 뒤 원자적으로 rename한다. 쓰기 도중
+  /// 크래시가 나도 기존 파일이 깨지지 않는다.
+  Future<void> _writeAtomically(String fileName, String contents) async {
     await metadataDirectory.create(recursive: true);
-    await metadataFile(fileName).writeAsString(jsonEncode(value));
+    final target = metadataFile(fileName);
+    final temp = File('${target.path}.tmp');
+    await temp.writeAsString(contents, flush: true);
+    await temp.rename(target.path);
   }
 
   Future<void> deleteMetadata(String fileName) async {

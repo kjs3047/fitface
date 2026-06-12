@@ -59,13 +59,14 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _setOpenAiProxyUrl(
     BuildContext context,
     WidgetRef ref,
-    String? currentValue,
+    AiSettings settings,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final value = await showDialog<String>(
+    final result = await showDialog<_OpenAiProxyDialogResult>(
       context: context,
       builder: (context) => _OpenAiProxyDialog(
-        initialValue: currentValue ?? '',
+        initialValue: settings.openAiProxyUrl ?? '',
+        initialToken: settings.openAiProxyToken ?? '',
         onTest: (proxyUrl) async {
           final check =
               await ref.read(openAiProxyHealthServiceProvider).check(proxyUrl);
@@ -73,19 +74,22 @@ class SettingsScreen extends ConsumerWidget {
         },
       ),
     );
-    if (value == null) {
+    if (result == null) {
       return;
     }
     try {
-      await ref.read(aiSettingsProvider.notifier).setOpenAiProxyUrl(value);
+      await ref.read(aiSettingsProvider.notifier).setOpenAiProxyUrl(result.url);
+      await ref
+          .read(aiSettingsProvider.notifier)
+          .setOpenAiProxyToken(result.token);
     } catch (error) {
       messenger.showSnackBar(
-        SnackBar(content: Text('OpenAI 프록시 주소를 저장하지 못했습니다: $error')),
+        SnackBar(content: Text('OpenAI 프록시 설정을 저장하지 못했습니다: $error')),
       );
       return;
     }
     messenger.showSnackBar(
-      const SnackBar(content: Text('OpenAI 프록시 주소를 저장했습니다.')),
+      const SnackBar(content: Text('OpenAI 프록시 설정을 저장했습니다.')),
     );
   }
 
@@ -480,7 +484,7 @@ class SettingsScreen extends ConsumerWidget {
               onOpenAiProxyTap: () => _setOpenAiProxyUrl(
                 context,
                 ref,
-                aiSettings.openAiProxyUrl,
+                aiSettings,
               ),
               onLocalModelTap: () => _showLocalModelInfo(
                 context,
@@ -538,13 +542,22 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
+class _OpenAiProxyDialogResult {
+  const _OpenAiProxyDialogResult({this.url, this.token});
+
+  final String? url;
+  final String? token;
+}
+
 class _OpenAiProxyDialog extends StatefulWidget {
   const _OpenAiProxyDialog({
     required this.initialValue,
+    required this.initialToken,
     required this.onTest,
   });
 
   final String initialValue;
+  final String initialToken;
   final Future<String> Function(String proxyUrl) onTest;
 
   @override
@@ -553,6 +566,7 @@ class _OpenAiProxyDialog extends StatefulWidget {
 
 class _OpenAiProxyDialogState extends State<_OpenAiProxyDialog> {
   late final TextEditingController _controller;
+  late final TextEditingController _tokenController;
   bool _isTesting = false;
   String? _testMessage;
   bool _testSucceeded = false;
@@ -561,11 +575,13 @@ class _OpenAiProxyDialogState extends State<_OpenAiProxyDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.initialValue);
+    _tokenController = TextEditingController(text: widget.initialToken);
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _tokenController.dispose();
     super.dispose();
   }
 
@@ -630,9 +646,20 @@ class _OpenAiProxyDialogState extends State<_OpenAiProxyDialog> {
               }
             },
           ),
+          const SizedBox(height: 12),
+          TextFormField(
+            key: const Key('ai-settings-openai-proxy-token-field'),
+            controller: _tokenController,
+            decoration: const InputDecoration(
+              labelText: '프록시 인증 토큰 (선택)',
+              hintText: '프록시에 FITFACE_PROXY_AUTH_TOKEN을 설정한 경우 입력',
+            ),
+            obscureText: true,
+          ),
           const SizedBox(height: 10),
           Text(
-            '저장 전 연결 테스트로 /health 응답을 확인할 수 있습니다.',
+            '저장 전 연결 테스트로 /health 응답을 확인할 수 있습니다. '
+            '인증 토큰은 프록시 서버에 설정한 값과 같아야 합니다.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           if (_isTesting) ...[
@@ -675,7 +702,13 @@ class _OpenAiProxyDialogState extends State<_OpenAiProxyDialog> {
         TextButton(
           onPressed: _isTesting
               ? null
-              : () => Navigator.pop(context, _controller.text),
+              : () => Navigator.pop(
+                    context,
+                    _OpenAiProxyDialogResult(
+                      url: _controller.text,
+                      token: _tokenController.text,
+                    ),
+                  ),
           child: const Text('저장'),
         ),
       ],

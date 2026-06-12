@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fitface/openai_proxy/openai_proxy_server.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -206,6 +207,118 @@ void main() {
       ),
     );
   });
+
+  test('auth token rejects AI requests without a matching header', () async {
+    final proxy = FitFaceOpenAiProxy(
+      config: const OpenAiProxyConfig(
+        apiKey: 'test-key',
+        authToken: 'secret-token',
+      ),
+      client: _FakeResponsesClient(
+        (_) => _openAiOutput({
+          'type': '여름 쿨',
+          'recommendedColors': <String>[],
+          'avoidColors': <String>[],
+          'comment': 'ok',
+        }),
+      ),
+    );
+    final server = await proxy.start(address: '127.0.0.1', port: 0);
+    addTearDown(() => server.close(force: true));
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final base = 'http://127.0.0.1:${server.port}';
+
+    // /health stays open without a token.
+    final health = await _get(client, '$base/health');
+    expect(health.statusCode, 200);
+
+    // No token -> 401.
+    final unauthorized = await _postJson(
+      client,
+      '$base/ai/personal-color',
+      {'prompt': 'p', 'mode': 'featuresOnly'},
+    );
+    expect(unauthorized.statusCode, HttpStatus.unauthorized);
+    expect(jsonDecode(unauthorized.body)['error']['code'], 'UNAUTHORIZED');
+
+    // Wrong token -> 401.
+    final wrong = await _postJson(
+      client,
+      '$base/ai/personal-color',
+      {'prompt': 'p', 'mode': 'featuresOnly'},
+      token: 'nope',
+    );
+    expect(wrong.statusCode, HttpStatus.unauthorized);
+
+    // Correct token -> 200.
+    final ok = await _postJson(
+      client,
+      '$base/ai/personal-color',
+      {'prompt': 'p', 'mode': 'featuresOnly'},
+      token: 'secret-token',
+    );
+    expect(ok.statusCode, 200);
+    expect(jsonDecode(ok.body)['result']['type'], '여름 쿨');
+  });
+
+  test('requests are served without an auth token when none is configured',
+      () async {
+    final proxy = FitFaceOpenAiProxy(
+      config: const OpenAiProxyConfig(apiKey: 'test-key'),
+      client: _FakeResponsesClient(
+        (_) => _openAiOutput({
+          'type': '봄 웜',
+          'recommendedColors': <String>[],
+          'avoidColors': <String>[],
+          'comment': 'ok',
+        }),
+      ),
+    );
+    final server = await proxy.start(address: '127.0.0.1', port: 0);
+    addTearDown(() => server.close(force: true));
+    final client = HttpClient();
+    addTearDown(() => client.close(force: true));
+    final base = 'http://127.0.0.1:${server.port}';
+
+    final ok = await _postJson(
+      client,
+      '$base/ai/personal-color',
+      {'prompt': 'p', 'mode': 'featuresOnly'},
+    );
+    expect(ok.statusCode, 200);
+    expect(jsonDecode(ok.body)['result']['type'], '봄 웜');
+  });
+}
+
+class _HttpResult {
+  const _HttpResult(this.statusCode, this.body);
+  final int statusCode;
+  final String body;
+}
+
+Future<_HttpResult> _get(HttpClient client, String url) async {
+  final request = await client.getUrl(Uri.parse(url));
+  final response = await request.close();
+  final body = await utf8.decodeStream(response);
+  return _HttpResult(response.statusCode, body);
+}
+
+Future<_HttpResult> _postJson(
+  HttpClient client,
+  String url,
+  Map<String, dynamic> body, {
+  String? token,
+}) async {
+  final request = await client.postUrl(Uri.parse(url));
+  request.headers.contentType = ContentType.json;
+  if (token != null) {
+    request.headers.set('X-FitFace-Token', token);
+  }
+  request.write(jsonEncode(body));
+  final response = await request.close();
+  final responseBody = await utf8.decodeStream(response);
+  return _HttpResult(response.statusCode, responseBody);
 }
 
 Map<String, dynamic> _openAiOutput(Map<String, dynamic> result) {

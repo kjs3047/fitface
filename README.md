@@ -45,7 +45,19 @@ FITFACE_PROXY_HOST=127.0.0.1
 FITFACE_PROXY_PORT=8787
 FITFACE_PROXY_MAX_BODY_BYTES=12582912
 FITFACE_PROXY_MAX_IMAGES=3
+FITFACE_PROXY_AUTH_TOKEN=<shared-secret>
 ```
+
+If the proxy is reachable from other devices (for example
+`FITFACE_PROXY_HOST=0.0.0.0`), set `FITFACE_PROXY_AUTH_TOKEN` to a shared secret.
+The proxy then requires every `/ai/*` request to send the same value in an
+`X-FitFace-Token` header (`/health` stays open for connection tests). Enter the
+same token in the app under **Settings → AI 설정 → OpenAI 프록시 주소** so the
+app attaches it automatically. When `FITFACE_PROXY_AUTH_TOKEN` is unset the proxy
+keeps the previous behavior and does not require a token (local development).
+
+Prefer binding to `127.0.0.1` unless you intentionally expose the proxy on your
+LAN, and rotate the OpenAI API key if it has ever been stored in plaintext.
 
 Then set the app's OpenAI proxy URL to the server URL, for example:
 

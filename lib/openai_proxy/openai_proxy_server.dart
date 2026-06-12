@@ -10,6 +10,7 @@ class OpenAiProxyConfig {
     this.port = 8787,
     this.maxBodyBytes = 12 * 1024 * 1024,
     this.maxImages = 3,
+    this.authToken,
   });
 
   factory OpenAiProxyConfig.fromEnvironment(Map<String, String> env) {
@@ -26,6 +27,7 @@ class OpenAiProxyConfig {
     final port = _envValue(env, 'FITFACE_PROXY_PORT');
     final maxBodyBytes = _envValue(env, 'FITFACE_PROXY_MAX_BODY_BYTES');
     final maxImages = _envValue(env, 'FITFACE_PROXY_MAX_IMAGES');
+    final authToken = _envValue(env, 'FITFACE_PROXY_AUTH_TOKEN');
 
     return OpenAiProxyConfig(
       apiKey: apiKey,
@@ -34,6 +36,7 @@ class OpenAiProxyConfig {
       port: int.tryParse(port ?? '') ?? 8787,
       maxBodyBytes: int.tryParse(maxBodyBytes ?? '') ?? 12 * 1024 * 1024,
       maxImages: int.tryParse(maxImages ?? '') ?? 3,
+      authToken: authToken?.isNotEmpty == true ? authToken : null,
     );
   }
 
@@ -43,7 +46,14 @@ class OpenAiProxyConfig {
   final int port;
   final int maxBodyBytes;
   final int maxImages;
+
+  /// 설정 시 AI 엔드포인트는 X-FitFace-Token 헤더로 이 값을 요구한다.
+  /// null이면 인증을 강제하지 않는다(로컬 개발 호환).
+  final String? authToken;
 }
+
+/// 앱과 프록시가 공유하는 인증 헤더 이름.
+const fitFaceProxyAuthHeader = 'x-fitface-token';
 
 String? _envValue(Map<String, String> env, String key) {
   final value = env[key]?.trim();
@@ -136,11 +146,12 @@ class FitFaceOpenAiProxy {
     int port = 8787,
   }) async {
     final server = await HttpServer.bind(address, port);
-    unawaited(
-      server.forEach((request) async {
-        await handleHttpRequest(request);
-      }),
-    );
+    // forEach는 콜백을 직렬로 await해 한 요청(수 초 걸리는 OpenAI 호출)이
+    // 끝날 때까지 /health조차 막힌다. listen으로 각 요청을 동시에 처리한다.
+    // 핸들러가 자체적으로 모든 예외를 잡으므로 unawaited가 안전하다.
+    server.listen((request) {
+      unawaited(handleHttpRequest(request));
+    });
     return server;
   }
 
@@ -157,6 +168,7 @@ class FitFaceOpenAiProxy {
           HttpStatus.methodNotAllowed,
         );
       }
+      _ensureAuthorized(request);
       if (request.headers.contentType?.mimeType != ContentType.json.mimeType) {
         throw const OpenAiProxyException(
           'UNSUPPORTED_CONTENT_TYPE',
@@ -194,6 +206,22 @@ class FitFaceOpenAiProxy {
           },
         },
         statusCode: HttpStatus.internalServerError,
+      );
+    }
+  }
+
+  /// authToken이 설정돼 있으면 AI 엔드포인트는 일치하는 토큰 헤더를 요구한다.
+  void _ensureAuthorized(HttpRequest request) {
+    final expected = config.authToken;
+    if (expected == null || expected.isEmpty) {
+      return;
+    }
+    final provided = request.headers.value(fitFaceProxyAuthHeader)?.trim();
+    if (provided == null || provided != expected) {
+      throw const OpenAiProxyException(
+        'UNAUTHORIZED',
+        'Missing or invalid auth token.',
+        HttpStatus.unauthorized,
       );
     }
   }

@@ -61,6 +61,10 @@ class OpenAiPersonalColorService implements PersonalColorEngineAdapter {
     try {
       final request = await _client.postUrl(uri).timeout(requestTimeout);
       request.headers.contentType = ContentType.json;
+      final token = _settings.openAiProxyToken?.trim();
+      if (token != null && token.isNotEmpty) {
+        request.headers.set('X-FitFace-Token', token);
+      }
       request.write(jsonEncode(body));
       final response = await request.close().timeout(requestTimeout);
       final text = await utf8.decodeStream(response).timeout(requestTimeout);
