@@ -15,6 +15,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
     required this.settings,
     required this.featureExtractor,
     this.personalColor,
+    this.personalColorLoader,
     AiPromptBuilder promptBuilder = const AiPromptBuilder(),
     RuleBasedAiAnalysisService ruleBasedService =
         const RuleBasedAiAnalysisService(),
@@ -32,6 +33,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
 
   /// 저장된 퍼스널 컬러 진단(없으면 null). 분석 프롬프트의 참고 정보로 주입된다.
   final PersonalColorResult? personalColor;
+  final Future<PersonalColorResult?> Function()? personalColorLoader;
   final AiPromptBuilder _promptBuilder;
   final RuleBasedAiAnalysisService _ruleBasedService;
   final MockAiAnalysisService _mockService;
@@ -39,8 +41,8 @@ class AiAnalysisCoordinator implements AiAnalysisService {
   final AiEngineAdapter? _openAiService;
 
   /// 퍼스널 컬러가 실제로 프롬프트에 반영될 수 있는 상태인지.
-  bool get _hasPersonalColor =>
-      _promptBuilder.personalColorPromptLine(personalColor) != null;
+  bool _hasPersonalColor(PersonalColorResult? value) =>
+      _promptBuilder.personalColorPromptLine(value) != null;
 
   @override
   Future<AiAnalysisResult> analyzeSnapshot(OutfitSnapshot snapshot) async {
@@ -56,6 +58,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
     }
     _ensureSelectedEngineConfigured();
 
+    final loadedPersonalColor = await _loadPersonalColor();
     final features = await _tryExtract(snapshot.imagePath);
     final engine = _engineForSettings();
     if (engine == null) {
@@ -71,13 +74,13 @@ class AiAnalysisCoordinator implements AiAnalysisService {
         ? _promptBuilder.buildLocalSnapshotPrompt(
             snapshot: snapshot,
             features: features,
-            personalColor: personalColor,
+            personalColor: loadedPersonalColor,
           )
         : _promptBuilder.buildSnapshotPrompt(
             snapshot: snapshot,
             features: features,
             includeImage: includeImage,
-            personalColor: personalColor,
+            personalColor: loadedPersonalColor,
           );
     try {
       final result = await engine.analyzeSnapshot(
@@ -88,7 +91,9 @@ class AiAnalysisCoordinator implements AiAnalysisService {
           prompt: prompt,
         ),
       );
-      return result.copyWith(usedPersonalColor: _hasPersonalColor);
+      return result.copyWith(
+        usedPersonalColor: _hasPersonalColor(loadedPersonalColor),
+      );
     } catch (visionError) {
       if (!includeImage) {
         return _ruleBasedService.analyzeSnapshot(
@@ -108,11 +113,13 @@ class AiAnalysisCoordinator implements AiAnalysisService {
                 snapshot: snapshot,
                 features: features,
                 includeImage: false,
-                personalColor: personalColor,
+                personalColor: loadedPersonalColor,
               ),
             ),
           );
-          return result.copyWith(usedPersonalColor: _hasPersonalColor);
+          return result.copyWith(
+            usedPersonalColor: _hasPersonalColor(loadedPersonalColor),
+          );
         } catch (textError) {
           return _ruleBasedService.analyzeSnapshot(
             snapshot: snapshot,
@@ -146,6 +153,7 @@ class AiAnalysisCoordinator implements AiAnalysisService {
     }
     _ensureSelectedEngineConfigured();
 
+    final loadedPersonalColor = await _loadPersonalColor();
     final featuresBySnapshotId = <String, ImageFeatureSummary>{};
     for (final snapshot in snapshots) {
       final features = await _tryExtract(snapshot.imagePath);
@@ -168,13 +176,13 @@ class AiAnalysisCoordinator implements AiAnalysisService {
         ? _promptBuilder.buildLocalComparePrompt(
             snapshots: snapshots,
             featuresBySnapshotId: featuresBySnapshotId,
-            personalColor: personalColor,
+            personalColor: loadedPersonalColor,
           )
         : _promptBuilder.buildComparePrompt(
             snapshots: snapshots,
             featuresBySnapshotId: featuresBySnapshotId,
             includeImages: includeImages,
-            personalColor: personalColor,
+            personalColor: loadedPersonalColor,
           );
     try {
       final result = await engine.compareSnapshots(
@@ -185,7 +193,9 @@ class AiAnalysisCoordinator implements AiAnalysisService {
           prompt: prompt,
         ),
       );
-      return result.copyWith(usedPersonalColor: _hasPersonalColor);
+      return result.copyWith(
+        usedPersonalColor: _hasPersonalColor(loadedPersonalColor),
+      );
     } catch (visionError) {
       if (!includeImages) {
         return _ruleBasedService.compareSnapshots(
@@ -205,11 +215,13 @@ class AiAnalysisCoordinator implements AiAnalysisService {
                 snapshots: snapshots,
                 featuresBySnapshotId: featuresBySnapshotId,
                 includeImages: false,
-                personalColor: personalColor,
+                personalColor: loadedPersonalColor,
               ),
             ),
           );
-          return result.copyWith(usedPersonalColor: _hasPersonalColor);
+          return result.copyWith(
+            usedPersonalColor: _hasPersonalColor(loadedPersonalColor),
+          );
         } catch (textError) {
           return _ruleBasedService.compareSnapshots(
             snapshots: snapshots,
@@ -225,6 +237,14 @@ class AiAnalysisCoordinator implements AiAnalysisService {
         reason: visionError.toString(),
       );
     }
+  }
+
+  Future<PersonalColorResult?> _loadPersonalColor() async {
+    final loader = personalColorLoader;
+    if (loader == null) {
+      return personalColor;
+    }
+    return loader();
   }
 
   Future<ImageFeatureSummary?> _tryExtract(String imagePath) async {

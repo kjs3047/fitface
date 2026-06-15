@@ -23,7 +23,7 @@ class AiPromptBuilder {
       '금지: 얼굴 외모 평가, 피부 품질 평가, 절대적 단정.',
       '출력은 반드시 JSON 객체 하나만 사용한다. 설명 문장이나 markdown은 쓰지 않는다.',
       '필수 필드: score(0-100 정수), comment(한국어 문자열), bestSnapshotId(null), '
-          'candidateScores({}), candidateComments({}), tags(문자열 배열), '
+          'candidateResults(빈 배열), tags(문자열 배열), '
           'strengths(문자열 배열), concerns(문자열 배열), suggestions(문자열 배열), confidence(0-1 숫자).',
     ].join('\n');
   }
@@ -79,8 +79,11 @@ class AiPromptBuilder {
     );
     lines.add(
       '필수 필드: score(0-100 정수), comment(한국어 문자열), bestSnapshotId(선택 후보 id), '
-      'candidateScores(id별 0-100 정수 object), candidateComments(id별 한국어 문자열 object), '
+      'candidateResults(후보별 object 배열: snapshotId, score, comment), '
       'tags(문자열 배열), strengths(문자열 배열), concerns(문자열 배열), suggestions(문자열 배열), confidence(0-1 숫자).',
+    );
+    lines.add(
+      'candidateResults에는 모든 후보 id를 포함하고, comment는 snapshotId가 아니라 각 후보의 한국어 한 문장 코멘트로 작성한다.',
     );
     return lines.join('\n');
   }
@@ -112,7 +115,10 @@ class AiPromptBuilder {
     );
     lines.add('score와 candidateScores 값은 0부터 100까지 정수로 작성한다.');
     lines.add('bestSnapshotId는 위 후보 id 중 하나로 작성한다.');
-    lines.add('candidateScores와 candidateComments에는 모든 후보 id를 포함한다.');
+    lines.add(
+      'candidateScores와 candidateComments에는 모든 후보 id를 포함하고, '
+      'candidateComments 값은 id가 아니라 각 후보의 한국어 한 문장 코멘트로 작성한다.',
+    );
     return lines.join('\n');
   }
 

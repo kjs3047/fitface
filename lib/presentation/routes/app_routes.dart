@@ -25,6 +25,8 @@ class FacePreviewArgs {
 }
 
 class AppRoutes {
+  static final routeObserver = RouteObserver<PageRoute<dynamic>>();
+
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     return MaterialPageRoute<void>(
       settings: settings,

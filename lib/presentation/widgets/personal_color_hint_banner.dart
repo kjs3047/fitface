@@ -26,8 +26,8 @@ class PersonalColorHintBanner extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return GestureDetector(
-      onTap: onTap ??
-          () => Navigator.pushNamed(context, RouteNames.personalColor),
+      onTap:
+          onTap ?? () => Navigator.pushNamed(context, RouteNames.personalColor),
       child: DecoratedBox(
         key: const Key('personal-color-hint-banner'),
         decoration: BoxDecoration(
@@ -47,7 +47,7 @@ class PersonalColorHintBanner extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '퍼스널 컬러를 설정하면 더 정확한 진단이 가능합니다.',
+                  '퍼스널 컬러 분석을 하면 결과가 AI 진단에 반영됩니다.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: AppTheme.ink,
                         fontWeight: FontWeight.w700,

@@ -285,8 +285,111 @@ void main() {
     expect(result.usedPersonalColor, isTrue);
   });
 
-  test(
-      'AiAnalysisCoordinator omits personal color line when none is saved',
+  test('AiAnalysisCoordinator loads saved personal color at request time',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_pc_loader_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final source = img.Image(width: 60, height: 60);
+    img.fill(source, color: img.ColorRgb8(140, 160, 210));
+    final sourceFile = File('${tempRoot.path}/snapshot.png');
+    await sourceFile.writeAsBytes(
+      Uint8List.fromList(img.encodePng(source)),
+      flush: true,
+    );
+    var loaderCalls = 0;
+    final openAiEngine = _RecordingOpenAiEngine();
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: openAiEngine,
+      personalColorLoader: () async {
+        loaderCalls++;
+        return const PersonalColorResult(
+          type: '여름 쿨',
+          recommendedColors: ['소프트 블루', '라벤더'],
+          avoidColors: ['강한 오렌지'],
+          comment: '쿨톤 진단입니다.',
+        );
+      },
+    );
+
+    final result = await coordinator.analyzeSnapshot(
+      OutfitSnapshot(
+        id: 'candidate',
+        imagePath: sourceFile.path,
+        createdAt: DateTime(2026),
+      ),
+    );
+
+    expect(loaderCalls, 1);
+    expect(openAiEngine.lastSnapshotRequest?.prompt, contains('여름 쿨'));
+    expect(openAiEngine.lastSnapshotRequest?.prompt, contains('소프트 블루'));
+    expect(result.usedPersonalColor, isTrue);
+  });
+
+  test('AiAnalysisCoordinator injects saved personal color into compare prompt',
+      () async {
+    final tempRoot =
+        await Directory.systemTemp.createTemp('fitface_pc_compare_');
+    addTearDown(() async {
+      if (await tempRoot.exists()) {
+        await tempRoot.delete(recursive: true);
+      }
+    });
+    final snapshots = <OutfitSnapshot>[];
+    for (var index = 0; index < 2; index++) {
+      final source = img.Image(width: 60, height: 60);
+      img.fill(source, color: img.ColorRgb8(140 + index * 20, 160, 210));
+      final sourceFile = File('${tempRoot.path}/snapshot_$index.png');
+      await sourceFile.writeAsBytes(
+        Uint8List.fromList(img.encodePng(source)),
+        flush: true,
+      );
+      snapshots.add(
+        OutfitSnapshot(
+          id: 'candidate_$index',
+          imagePath: sourceFile.path,
+          createdAt: DateTime(2026, 1, 1, 12, index),
+        ),
+      );
+    }
+    final openAiEngine = _RecordingOpenAiEngine();
+    final coordinator = AiAnalysisCoordinator(
+      settings: AiSettings.defaults().copyWith(
+        mode: AiEngineMode.openAi,
+        allowCloudAnalysis: true,
+        openAiProxyUrl: 'http://127.0.0.1:8787',
+      ),
+      featureExtractor: const ImageFeatureExtractor(),
+      openAiService: openAiEngine,
+      personalColor: const PersonalColorResult(
+        type: '여름 쿨',
+        recommendedColors: ['소프트 블루', '라벤더'],
+        avoidColors: ['강한 오렌지'],
+        comment: '쿨톤 진단입니다.',
+      ),
+    );
+
+    final result = await coordinator.compareSnapshots(snapshots);
+
+    expect(openAiEngine.compareCalls, 1);
+    expect(openAiEngine.lastCompareRequest?.prompt, contains('여름 쿨'));
+    expect(openAiEngine.lastCompareRequest?.prompt, contains('소프트 블루'));
+    expect(openAiEngine.lastCompareRequest?.prompt, contains('candidate_0'));
+    expect(openAiEngine.lastCompareRequest?.prompt, contains('candidate_1'));
+    expect(result.usedPersonalColor, isTrue);
+  });
+
+  test('AiAnalysisCoordinator omits personal color line when none is saved',
       () async {
     final tempRoot =
         await Directory.systemTemp.createTemp('fitface_pc_absent_');
@@ -1073,7 +1176,9 @@ class _VisionFailsTextSucceedsEngine implements AiEngineAdapter {
 
 class _RecordingOpenAiEngine implements AiEngineAdapter {
   int snapshotCalls = 0;
+  int compareCalls = 0;
   AiSnapshotAnalysisRequest? lastSnapshotRequest;
+  AiCompareAnalysisRequest? lastCompareRequest;
 
   @override
   String get engineName => 'openAi';
@@ -1097,6 +1202,8 @@ class _RecordingOpenAiEngine implements AiEngineAdapter {
   Future<AiAnalysisResult> compareSnapshots(
     AiCompareAnalysisRequest request,
   ) async {
+    compareCalls++;
+    lastCompareRequest = request;
     return AiAnalysisResult(
       score: 86,
       comment: 'OpenAI API 비교입니다.',

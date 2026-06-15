@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -15,6 +16,7 @@ import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
 import '../../../providers/storage_provider.dart';
 import '../../../providers/user_profile_provider.dart';
+import '../../routes/app_routes.dart';
 import '../../routes/route_names.dart';
 import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
@@ -31,7 +33,7 @@ class CameraMatchScreen extends ConsumerStatefulWidget {
 }
 
 class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final _captureKey = GlobalKey();
   CameraController? _controller;
   bool _isInitializing = true;
@@ -39,6 +41,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
   bool _isSaving = false;
   bool _isAiPreviewing = false;
   String? _error;
+  bool _isRouteObserverSubscribed = false;
 
   /// 직전 화면(얼굴 촬영 등)이 카메라를 막 해제한 직후 재진입하면 초기화가
   /// 경합할 수 있어, 토큰으로 가장 최근 초기화만 유효하게 만든다.
@@ -56,10 +59,55 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isRouteObserverSubscribed) {
+      return;
+    }
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      AppRoutes.routeObserver.subscribe(this, route);
+      _isRouteObserverSubscribed = true;
+    }
+  }
+
+  /// camera_android_camerax 0.6.x는 surface producer가 초기화되기 전 컨트롤러를
+  /// dispose하면 releaseFlutterSurfaceTexture()에서 PlatformException을 던진다.
+  /// (초기화 중 화면 전환/경합 시 발생) 프리뷰 교체는 이미 끝났으므로 안전하게 삼킨다.
+  static Future<void> _safeDispose(CameraController? controller) async {
+    if (controller == null) {
+      return;
+    }
+    try {
+      await controller.dispose();
+    } catch (_) {
+      // 초기화 미완료 상태의 dispose 예외는 무시한다.
+    }
+  }
+
+  @override
   void dispose() {
+    if (_isRouteObserverSubscribed) {
+      AppRoutes.routeObserver.unsubscribe(this);
+    }
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    unawaited(_safeDispose(_controller));
     super.dispose();
+  }
+
+  @override
+  void didPushNext() {
+    unawaited(_releaseCamera());
+  }
+
+  @override
+  void didPopNext() {
+    final controller = _controller;
+    if (!_isInitializing &&
+        (controller == null || !controller.value.isInitialized)) {
+      _didAutoRetry = false;
+      _initializeCamera();
+    }
   }
 
   @override
@@ -78,10 +126,22 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
       return;
     }
     if (state == AppLifecycleState.inactive) {
-      _cameraInitToken++;
-      controller.dispose();
+      unawaited(_releaseCamera());
+    }
+  }
+
+  Future<void> _releaseCamera() async {
+    final controller = _controller;
+    _cameraInitToken++;
+    if (mounted) {
+      setState(() {
+        _controller = null;
+        _isInitializing = false;
+      });
+    } else {
       _controller = null;
     }
+    await _safeDispose(controller);
   }
 
   Future<void> _initializeCamera() async {
@@ -125,7 +185,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
       );
       await nextController.initialize();
       if (!mounted || initToken != _cameraInitToken) {
-        await nextController.dispose();
+        await _safeDispose(nextController);
         return;
       }
       final previousController = _controller;
@@ -136,13 +196,10 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
         _controller = initializedController;
         _isInitializing = false;
       });
-      try {
-        await previousController?.dispose();
-      } catch (_) {
-        // 새 프리뷰 교체는 이미 성공했으므로 이전 컨트롤러 정리는 best effort.
-      }
+      // 새 프리뷰 교체는 이미 성공했으므로 이전 컨트롤러 정리는 best effort.
+      await _safeDispose(previousController);
     } catch (error) {
-      await nextController?.dispose();
+      await _safeDispose(nextController);
       if (!mounted || initToken != _cameraInitToken) {
         return;
       }
@@ -197,6 +254,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
       await ref.read(localFileStorageProvider).deleteFileSafely(
             preview.imagePath,
           );
+      final showPersonalColorHint = await _shouldShowPersonalColorHint();
       if (!mounted) {
         return;
       }
@@ -232,7 +290,7 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
                   ],
                 ),
               ],
-              if (!result.usedPersonalColor) ...[
+              if (showPersonalColorHint) ...[
                 const SizedBox(height: 12),
                 PersonalColorHintBanner(
                   visible: true,
@@ -262,6 +320,14 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
       if (mounted) {
         setState(() => _isAiPreviewing = false);
       }
+    }
+  }
+
+  Future<bool> _shouldShowPersonalColorHint() async {
+    try {
+      return await ref.read(savedPersonalColorProvider.future) == null;
+    } catch (_) {
+      return false;
     }
   }
 

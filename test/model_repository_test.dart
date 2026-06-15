@@ -113,6 +113,42 @@ void main() {
     expect(decoded.analysisMode, 'imageAndFeatures');
   });
 
+  test('AiAnalysisResult parses candidate result comments', () {
+    final decoded = AiAnalysisResult.fromJson({
+      'score': 88,
+      'comment': '두 번째 후보가 가장 안정적입니다.',
+      'bestSnapshotId': 'candidate_1',
+      'candidateResults': [
+        {
+          'snapshotId': 'candidate_0',
+          'score': 74,
+          'comment': '밝기 균형은 좋지만 대비가 조금 약합니다.',
+        },
+        {
+          'snapshotId': 'candidate_1',
+          'score': 88,
+          'comment': '퍼스널 컬러와 색감 대비가 가장 안정적입니다.',
+        },
+      ],
+      'tags': <String>[],
+      'strengths': <String>[],
+      'concerns': <String>[],
+      'suggestions': <String>[],
+      'confidence': 0.81,
+    });
+
+    expect(decoded.candidateScores['candidate_0'], 74);
+    expect(decoded.candidateScores['candidate_1'], 88);
+    expect(
+      decoded.candidateComments['candidate_0'],
+      '밝기 균형은 좋지만 대비가 조금 약합니다.',
+    );
+    expect(
+      decoded.candidateComments['candidate_1'],
+      '퍼스널 컬러와 색감 대비가 가장 안정적입니다.',
+    );
+  });
+
   test('AiSettingsRepository persists engine and proxy settings', () async {
     final repository = AiSettingsRepository(storage);
 
@@ -139,9 +175,7 @@ void main() {
     await storage.metadataFile(StorageKeys.snapshotsJson).writeAsString(
           '{ this is not valid json',
         );
-    await storage
-        .metadataFile(StorageKeys.profileJson)
-        .writeAsString('broken');
+    await storage.metadataFile(StorageKeys.profileJson).writeAsString('broken');
 
     expect(await storage.readJsonList(StorageKeys.snapshotsJson), isEmpty);
     expect(await storage.readJsonMap(StorageKeys.profileJson), isNull);

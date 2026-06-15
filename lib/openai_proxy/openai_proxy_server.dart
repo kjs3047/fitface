@@ -13,6 +13,21 @@ class OpenAiProxyConfig {
     this.authToken,
   });
 
+  factory OpenAiProxyConfig.fromEnvironmentFiles(
+    Map<String, String> env, {
+    List<String> paths = const ['.env', '.env.local'],
+  }) {
+    final merged = <String, String>{};
+    for (final path in paths) {
+      final file = File(path);
+      if (file.existsSync()) {
+        merged.addAll(_parseEnvFile(file.readAsStringSync()));
+      }
+    }
+    merged.addAll(env);
+    return OpenAiProxyConfig.fromEnvironment(merged);
+  }
+
   factory OpenAiProxyConfig.fromEnvironment(Map<String, String> env) {
     final apiKey = _envValue(env, 'OPENAI_API_KEY');
     if (apiKey == null || apiKey.isEmpty) {
@@ -57,7 +72,34 @@ const fitFaceProxyAuthHeader = 'x-fitface-token';
 
 String? _envValue(Map<String, String> env, String key) {
   final value = env[key]?.trim();
-  if (value == null || value.length < 2) {
+  return value == null ? null : _stripEnvQuotes(value);
+}
+
+Map<String, String> _parseEnvFile(String contents) {
+  final values = <String, String>{};
+  for (final line in const LineSplitter().convert(contents)) {
+    var trimmed = line.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) {
+      continue;
+    }
+    if (trimmed.startsWith('export ')) {
+      trimmed = trimmed.substring('export '.length).trimLeft();
+    }
+    final separator = trimmed.indexOf('=');
+    if (separator <= 0) {
+      continue;
+    }
+    final key = trimmed.substring(0, separator).trim();
+    if (key.isEmpty) {
+      continue;
+    }
+    values[key] = _stripEnvQuotes(trimmed.substring(separator + 1).trim());
+  }
+  return values;
+}
+
+String _stripEnvQuotes(String value) {
+  if (value.length < 2) {
     return value;
   }
   final first = value[0];

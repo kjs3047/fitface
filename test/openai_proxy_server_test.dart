@@ -23,6 +23,38 @@ void main() {
     expect(config.maxImages, 2);
   });
 
+  test('environment config loads .env files before process environment',
+      () async {
+    final root = await Directory.systemTemp.createTemp('fitface_proxy_env_');
+    addTearDown(() => root.delete(recursive: true));
+    await File('${root.path}/.env').writeAsString('''
+OPENAI_API_KEY=from-file
+OPENAI_MODEL=file-model
+FITFACE_PROXY_HOST=127.0.0.1
+FITFACE_PROXY_PORT=1111
+''');
+    await File('${root.path}/.env.local').writeAsString('''
+FITFACE_PROXY_HOST="0.0.0.0"
+FITFACE_PROXY_PORT='8787'
+FITFACE_PROXY_AUTH_TOKEN=local-token
+''');
+
+    final config = OpenAiProxyConfig.fromEnvironmentFiles(
+      {
+        'OPENAI_MODEL': 'runtime-model',
+        'FITFACE_PROXY_MAX_IMAGES': '5',
+      },
+      paths: ['${root.path}/.env', '${root.path}/.env.local'],
+    );
+
+    expect(config.apiKey, 'from-file');
+    expect(config.model, 'runtime-model');
+    expect(config.host, '0.0.0.0');
+    expect(config.port, 8787);
+    expect(config.maxImages, 5);
+    expect(config.authToken, 'local-token');
+  });
+
   test('snapshot endpoint builds a Responses API image request', () async {
     late Map<String, dynamic> captured;
     final proxy = FitFaceOpenAiProxy(
@@ -153,6 +185,15 @@ void main() {
     final properties = schema['properties'] as Map<String, dynamic>;
     expect(properties.containsKey('candidateResults'), isTrue);
     expect(properties.containsKey('candidateScores'), isFalse);
+    final candidateResults =
+        properties['candidateResults'] as Map<String, dynamic>;
+    final candidateItem = candidateResults['items'] as Map<String, dynamic>;
+    final candidateProperties =
+        candidateItem['properties'] as Map<String, dynamic>;
+    expect(
+      candidateProperties.keys,
+      containsAll(['snapshotId', 'score', 'comment']),
+    );
   });
 
   test('personal color endpoint supports features-only requests', () async {

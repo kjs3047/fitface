@@ -96,6 +96,7 @@ class _FacePreviewScreenState extends ConsumerState<FacePreviewScreen> {
             overlayFaceImagePath: overlayPath,
           );
       await ref.read(personalColorRepositoryProvider).clearResult();
+      ref.invalidate(savedPersonalColorProvider);
       await ref.read(cameraOverlayProvider.notifier).reset();
       if (!mounted) {
         return;

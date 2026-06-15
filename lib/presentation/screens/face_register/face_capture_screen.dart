@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -36,11 +37,36 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
     _initializeCamera();
   }
 
+  // surface 초기화 전에 dispose하면 camera_android_camerax가
+  // releaseFlutterSurfaceTexture()에서 IllegalStateException을 던진다(검은 화면 원인).
+  static Future<void> _safeDispose(CameraController? controller) async {
+    if (controller == null) return;
+    try {
+      await controller.dispose();
+    } catch (_) {
+      // 초기화 미완료 컨트롤러의 dispose 예외는 무시한다.
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    unawaited(_safeDispose(_controller));
     super.dispose();
+  }
+
+  Future<void> _releaseCamera() async {
+    final controller = _controller;
+    _cameraInitToken++;
+    if (mounted) {
+      setState(() {
+        _controller = null;
+        _isInitializing = false;
+      });
+    } else {
+      _controller = null;
+    }
+    await _safeDispose(controller);
   }
 
   @override
@@ -59,9 +85,7 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
       return;
     }
     if (state == AppLifecycleState.inactive) {
-      _cameraInitToken++;
-      controller.dispose();
-      _controller = null;
+      unawaited(_releaseCamera());
       return;
     }
   }
@@ -109,7 +133,7 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
       );
       await nextController.initialize();
       if (!mounted || initToken != _cameraInitToken) {
-        await nextController.dispose();
+        await _safeDispose(nextController);
         return;
       }
       final previousController = _controller;
@@ -119,13 +143,10 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
         _controller = initializedController;
         _isInitializing = false;
       });
-      try {
-        await previousController?.dispose();
-      } catch (_) {
-        // Replacing the preview already succeeded; old controller cleanup is best effort.
-      }
+      // Replacing the preview already succeeded; old controller cleanup is best effort.
+      await _safeDispose(previousController);
     } catch (error) {
-      await nextController?.dispose();
+      await _safeDispose(nextController);
       if (!mounted) {
         return;
       }
@@ -161,6 +182,7 @@ class _FaceCaptureScreenState extends ConsumerState<FaceCaptureScreen>
       } catch (_) {
         // The copied profile image is the durable source; temp cleanup is best effort.
       }
+      await _releaseCamera();
       if (!mounted) {
         return;
       }

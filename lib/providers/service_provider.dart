@@ -78,10 +78,12 @@ final savedPersonalColorProvider =
 final aiAnalysisServiceProvider = Provider<AiAnalysisService>((ref) {
   final settings =
       ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
+  final personalColorRepository = ref.watch(personalColorRepositoryProvider);
   return AiAnalysisCoordinator(
     settings: settings,
     featureExtractor: ref.watch(imageFeatureExtractorProvider),
     personalColor: ref.watch(savedPersonalColorProvider).valueOrNull,
+    personalColorLoader: personalColorRepository.loadResult,
     localGemmaService: LocalGemmaAnalysisService(settings: settings),
     openAiService: ref.watch(openAiAnalysisServiceProvider),
   );

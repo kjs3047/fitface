@@ -95,18 +95,13 @@ class AiAnalysisResult {
   factory AiAnalysisResult.fromJson(Map<String, dynamic> json) {
     final rawScores = json['candidateScores'] as Map<String, dynamic>?;
     final rawComments = json['candidateComments'] as Map<String, dynamic>?;
+    final rawCandidateResults = json['candidateResults'] as List<dynamic>?;
     return AiAnalysisResult(
       score: (json['score'] as num).round(),
       comment: json['comment'] as String,
       bestSnapshotId: json['bestSnapshotId'] as String?,
-      candidateScores: rawScores == null
-          ? const {}
-          : rawScores.map(
-              (key, value) => MapEntry(key, (value as num).round()),
-            ),
-      candidateComments: rawComments == null
-          ? const {}
-          : rawComments.map((key, value) => MapEntry(key, value as String)),
+      candidateScores: _candidateScores(rawScores, rawCandidateResults),
+      candidateComments: _candidateComments(rawComments, rawCandidateResults),
       tags: _stringList(json['tags']),
       strengths: _stringList(json['strengths']),
       concerns: _stringList(json['concerns']),
@@ -124,5 +119,53 @@ class AiAnalysisResult {
     return ((value as List<dynamic>?) ?? const [])
         .map((item) => item as String)
         .toList();
+  }
+
+  static Map<String, int> _candidateScores(
+    Map<String, dynamic>? rawScores,
+    List<dynamic>? rawCandidateResults,
+  ) {
+    final scores = <String, int>{};
+    if (rawScores != null) {
+      scores.addAll(
+        rawScores.map((key, value) => MapEntry(key, (value as num).round())),
+      );
+    }
+    if (rawCandidateResults != null) {
+      for (final item
+          in rawCandidateResults.whereType<Map<String, dynamic>>()) {
+        final snapshotId = item['snapshotId'];
+        final score = item['score'];
+        if (snapshotId is String && snapshotId.isNotEmpty && score is num) {
+          scores[snapshotId] = score.round();
+        }
+      }
+    }
+    return scores;
+  }
+
+  static Map<String, String> _candidateComments(
+    Map<String, dynamic>? rawComments,
+    List<dynamic>? rawCandidateResults,
+  ) {
+    final comments = <String, String>{};
+    if (rawComments != null) {
+      comments.addAll(
+        rawComments.map((key, value) => MapEntry(key, value as String)),
+      );
+    }
+    if (rawCandidateResults != null) {
+      for (final item
+          in rawCandidateResults.whereType<Map<String, dynamic>>()) {
+        final snapshotId = item['snapshotId'];
+        final comment = item['comment'];
+        if (snapshotId is String &&
+            snapshotId.isNotEmpty &&
+            comment is String) {
+          comments[snapshotId] = comment;
+        }
+      }
+    }
+    return comments;
   }
 }

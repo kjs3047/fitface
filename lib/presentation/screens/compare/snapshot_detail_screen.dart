@@ -330,6 +330,12 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                           const SizedBox(height: 12),
                           _SnapshotAiResultCard(
                             result: aiResult,
+                            showPersonalColorHint:
+                                ref.watch(savedPersonalColorProvider).maybeWhen(
+                                      data: (personalColor) =>
+                                          personalColor == null,
+                                      orElse: () => false,
+                                    ),
                           ),
                         ],
                       ],
@@ -348,9 +354,14 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
 class _SnapshotAiResultCard extends StatelessWidget {
   const _SnapshotAiResultCard({
     required this.result,
+    required this.showPersonalColorHint,
   });
 
   final AiAnalysisResult result;
+
+  /// 저장된 퍼스널 컬러가 없다고 확인된 경우에만 안내 배너를 띄운다.
+  /// 로딩 중에는 저장 결과가 있는 사용자를 방해하지 않도록 숨긴다.
+  final bool showPersonalColorHint;
 
   @override
   Widget build(BuildContext context) {
@@ -423,8 +434,8 @@ class _SnapshotAiResultCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             ],
-            // 캐시된 결과는 퍼스널 컬러 반영 여부를 알 수 없어 안내하지 않는다.
-            if (result.engine != 'cached' && !result.usedPersonalColor) ...[
+            // 저장된 퍼스널 컬러가 없을 때만 설정을 안내한다.
+            if (showPersonalColorHint) ...[
               const SizedBox(height: 12),
               const PersonalColorHintBanner(visible: true),
             ],

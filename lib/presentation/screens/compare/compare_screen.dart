@@ -181,6 +181,11 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
               Center(child: Text('후보를 불러오지 못했습니다: $error')),
           data: (snapshots) {
             final compareResult = _visibleCompareResult(snapshots);
+            final showPersonalColorHint =
+                ref.watch(savedPersonalColorProvider).maybeWhen(
+                      data: (personalColor) => personalColor == null,
+                      orElse: () => false,
+                    );
             return SafeArea(
               child: Column(
                 children: [
@@ -209,6 +214,12 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
                                       compareResult,
                                       snapshots[index].id,
                                     ),
+                              comment: compareResult == null
+                                  ? null
+                                  : _commentForSnapshot(
+                                      compareResult,
+                                      snapshots[index].id,
+                                    ),
                               isLocked: _isComparing,
                               onBlockedTap: _showComparingBlockedMessage,
                               onTap: () =>
@@ -219,8 +230,8 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
                           if (index != 2) const SizedBox(height: 10),
                         ],
                         // 후보 슬롯 위치를 밀어내지 않도록 안내 배너는 목록 끝에 둔다.
-                        if (compareResult != null &&
-                            !compareResult.usedPersonalColor) ...[
+                        // 저장 후보가 있을 때만 퍼스널 컬러 설정을 안내한다.
+                        if (snapshots.isNotEmpty && showPersonalColorHint) ...[
                           const SizedBox(height: 12),
                           const PersonalColorHintBanner(visible: true),
                         ],
@@ -318,6 +329,11 @@ class _CompareScreenState extends ConsumerState<CompareScreen> {
 
   int? _scoreForSnapshot(AiAnalysisResult result, String snapshotId) {
     return result.candidateScores[snapshotId]?.clamp(0, 100).toInt();
+  }
+
+  String? _commentForSnapshot(AiAnalysisResult result, String snapshotId) {
+    final comment = result.candidateComments[snapshotId]?.trim();
+    return comment == null || comment.isEmpty ? null : comment;
   }
 }
 
@@ -436,6 +452,7 @@ class _SnapshotSlot extends StatelessWidget {
     required this.snapshot,
     required this.isBest,
     required this.score,
+    required this.comment,
     required this.isLocked,
     required this.onBlockedTap,
     required this.onTap,
@@ -446,6 +463,7 @@ class _SnapshotSlot extends StatelessWidget {
   final OutfitSnapshot snapshot;
   final bool isBest;
   final int? score;
+  final String? comment;
   final bool isLocked;
   final VoidCallback onBlockedTap;
   final VoidCallback onTap;
@@ -454,6 +472,7 @@ class _SnapshotSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final memo = snapshot.memo?.trim();
+    final aiComment = comment?.trim();
     return Opacity(
       opacity: isLocked ? 0.68 : 1,
       child: Card(
@@ -488,6 +507,19 @@ class _SnapshotSlot extends StatelessWidget {
                         _formatDate(snapshot.createdAt),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
+                      if (aiComment != null && aiComment.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          aiComment,
+                          key: Key('compare-candidate-comment-${snapshot.id}'),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: AppTheme.mutedInk,
+                                  ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

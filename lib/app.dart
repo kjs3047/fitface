@@ -15,6 +15,7 @@ class FitFaceApp extends StatelessWidget {
       theme: AppTheme.light(),
       initialRoute: RouteNames.splash,
       onGenerateRoute: AppRoutes.onGenerateRoute,
+      navigatorObservers: [AppRoutes.routeObserver],
     );
   }
 }

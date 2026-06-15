@@ -70,7 +70,7 @@ class OpenAiPersonalColorService implements PersonalColorEngineAdapter {
       final text = await utf8.decodeStream(response).timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
-          'OpenAI 프록시 요청 실패: ${response.statusCode} $text',
+          _friendlyProxyError(response.statusCode, text),
           uri: uri,
         );
       }
@@ -81,6 +81,36 @@ class OpenAiPersonalColorService implements PersonalColorEngineAdapter {
         uri: uri,
       );
     }
+  }
+
+  /// 프록시/OpenAI 오류를 사용자가 원인을 알 수 있는 한국어 메시지로 바꾼다.
+  /// 프록시는 {"error":{"code":...,"message":...}} 형태로 응답한다.
+  String _friendlyProxyError(int statusCode, String body) {
+    String? code;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map && decoded['error'] is Map) {
+        code = (decoded['error'] as Map)['code']?.toString();
+      }
+    } catch (_) {
+      // 파싱 불가 시 상태코드 기반으로만 판단한다.
+    }
+    if (body.contains('invalid_api_key') ||
+        body.contains('Incorrect API key')) {
+      return 'OpenAI API 키가 올바르지 않습니다. 프록시 서버의 OPENAI_API_KEY를 확인하세요.';
+    }
+    switch (code) {
+      case 'UNAUTHORIZED':
+        return '프록시 인증 토큰이 일치하지 않습니다. 설정의 토큰을 확인하세요.';
+      case 'OPENAI_TIMEOUT':
+        return 'OpenAI 응답이 지연되어 요청이 중단됐습니다.';
+      case 'MISSING_OPENAI_API_KEY':
+        return '프록시 서버에 OpenAI API 키가 설정되지 않았습니다.';
+    }
+    if (statusCode == 401 || statusCode == 403) {
+      return '프록시 인증에 실패했습니다($statusCode). 토큰/키 설정을 확인하세요.';
+    }
+    return 'OpenAI 프록시 요청 실패($statusCode).';
   }
 
   /// keep-alive 소켓이 누적되지 않도록 더 이상 쓰지 않을 때 호출한다.

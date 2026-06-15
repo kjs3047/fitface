@@ -18,6 +18,7 @@ import 'package:fitface/domain/services/face_image_quality_service.dart';
 import 'package:fitface/domain/services/local_gemma_chat_service.dart';
 import 'package:fitface/domain/services/open_ai_proxy_health_service.dart';
 import 'package:fitface/presentation/screens/ai_chat/local_gemma_chat_screen.dart';
+import 'package:fitface/presentation/screens/camera_match/camera_match_screen.dart';
 import 'package:fitface/presentation/screens/compare/compare_screen.dart';
 import 'package:fitface/presentation/screens/compare/snapshot_image_viewer_screen.dart';
 import 'package:fitface/presentation/screens/face_register/face_capture_screen.dart';
@@ -26,6 +27,7 @@ import 'package:fitface/presentation/screens/face_register/face_register_screen.
 import 'package:fitface/presentation/screens/onboarding/onboarding_screen.dart';
 import 'package:fitface/presentation/screens/settings/settings_screen.dart';
 import 'package:fitface/presentation/routes/app_routes.dart';
+import 'package:fitface/presentation/routes/route_names.dart';
 import 'package:fitface/presentation/widgets/ai_processing_status.dart';
 import 'package:fitface/presentation/widgets/personal_color_result_card.dart';
 import 'package:fitface/providers/repository_provider.dart';
@@ -47,6 +49,8 @@ void main() {
   });
 
   tearDown(() async {
+    imageCache.clear();
+    imageCache.clearLiveImages();
     if (await tempRoot.exists()) {
       await tempRoot.delete(recursive: true);
     }
@@ -145,6 +149,87 @@ void main() {
       }
     },
   );
+
+  testWidgets('FaceCapture releases its camera before opening crop', (
+    tester,
+  ) async {
+    useTallTestView(tester);
+    final originalCamera = CameraPlatform.instance;
+    final originalPermission = PermissionHandlerPlatform.instance;
+    final permission = _GrantingPermissionHandler();
+    final camera = _FaceCaptureCameraPlatform(
+      canUseCamera: () => permission.requestedPermissions.isNotEmpty,
+    );
+    CameraPlatform.instance = camera;
+    PermissionHandlerPlatform.instance = permission;
+
+    final rawCapture = File('${tempRoot.path}/raw_capture.jpg');
+    await tester.runAsync(() async {
+      final image = img.Image(width: 24, height: 24);
+      img.fill(image, color: img.ColorRgb8(96, 96, 96));
+      await rawCapture.writeAsBytes(img.encodeJpg(image), flush: true);
+    });
+    camera.nextPicturePath = rawCapture.path;
+
+    try {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [localFileStorageProvider.overrideWithValue(storage)],
+          child: MaterialApp(
+            onGenerateRoute: (settings) {
+              if (settings.name == RouteNames.faceCrop) {
+                return MaterialPageRoute<void>(
+                  settings: settings,
+                  builder: (_) => const Scaffold(body: Text('crop stub')),
+                );
+              }
+              return AppRoutes.onGenerateRoute(settings);
+            },
+            home: const FaceCaptureScreen(),
+          ),
+        ),
+      );
+      for (var i = 0; i < 12; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.widgetWithText(FilledButton, '촬영하기').evaluate().isEmpty) {
+          continue;
+        }
+        final button = tester.widget<FilledButton>(
+          find.widgetWithText(FilledButton, '촬영하기'),
+        );
+        if (button.onPressed != null) {
+          break;
+        }
+      }
+
+      final captureButton = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, '촬영하기'),
+      );
+      expect(captureButton.onPressed, isNotNull);
+
+      await tester.ensureVisible(find.widgetWithText(FilledButton, '촬영하기'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '촬영하기'));
+      await tester.pump();
+      for (var i = 0; i < 20; i++) {
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pump(const Duration(milliseconds: 100));
+        if (camera.disposedCameraIds.contains(1)) {
+          break;
+        }
+      }
+
+      expect(camera.disposedCameraIds, contains(1));
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      imageCache.clear();
+      imageCache.clearLiveImages();
+      CameraPlatform.instance = originalCamera;
+      PermissionHandlerPlatform.instance = originalPermission;
+    }
+  });
 
   testWidgets('FaceRegister shows current registered face image', (
     tester,
@@ -366,6 +451,57 @@ void main() {
     await tester.pump();
 
     expect(find.text('비교 중...'), findsOneWidget);
+  });
+
+  testWidgets('CameraMatch releases its camera when settings opens', (
+    tester,
+  ) async {
+    final originalCamera = CameraPlatform.instance;
+    final originalPermission = PermissionHandlerPlatform.instance;
+    final permission = _GrantingPermissionHandler();
+    final camera = _FaceCaptureCameraPlatform(
+      canUseCamera: () => permission.requestedPermissions.isNotEmpty,
+    );
+    CameraPlatform.instance = camera;
+    PermissionHandlerPlatform.instance = permission;
+
+    try {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [localFileStorageProvider.overrideWithValue(storage)],
+          child: MaterialApp(
+            navigatorObservers: [AppRoutes.routeObserver],
+            onGenerateRoute: AppRoutes.onGenerateRoute,
+            home: const CameraMatchScreen(),
+          ),
+        ),
+      );
+      for (var i = 0; i < 12; i++) {
+        await tester.runAsync(() async {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        });
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byTooltip('설정').evaluate().isNotEmpty &&
+            camera.createdCameraCount > 0) {
+          break;
+        }
+      }
+
+      expect(camera.createdCameraCount, 1);
+
+      final cameraMatchContext = tester.element(find.byType(CameraMatchScreen));
+      Navigator.of(cameraMatchContext).pushNamed(RouteNames.settings);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(camera.disposedCameraIds, contains(1));
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      imageCache.clear();
+      imageCache.clearLiveImages();
+      CameraPlatform.instance = originalCamera;
+      PermissionHandlerPlatform.instance = originalPermission;
+    }
   });
 
   testWidgets('SnapshotImageViewer supports pinch zoom', (tester) async {
@@ -820,6 +956,8 @@ class _FaceCaptureCameraPlatform extends CameraPlatform {
   final _initializedControllers =
       <int, StreamController<CameraInitializedEvent>>{};
   final _errorControllers = <int, StreamController<CameraErrorEvent>>{};
+  final disposedCameraIds = <int>[];
+  String? nextPicturePath;
   int availableCameraCalls = 0;
   int createdCameraCount = 0;
 
@@ -858,6 +996,7 @@ class _FaceCaptureCameraPlatform extends CameraPlatform {
     int cameraId, {
     ImageFormatGroup imageFormatGroup = ImageFormatGroup.unknown,
   }) async {
+    await Future<void>.delayed(Duration.zero);
     _initializedControllers[cameraId]?.add(
       const CameraInitializedEvent(
         1,
@@ -892,7 +1031,17 @@ class _FaceCaptureCameraPlatform extends CameraPlatform {
   }
 
   @override
+  Future<XFile> takePicture(int cameraId) async {
+    final path = nextPicturePath;
+    if (path == null) {
+      throw StateError('nextPicturePath was not configured');
+    }
+    return XFile(path);
+  }
+
+  @override
   Future<void> dispose(int cameraId) async {
+    disposedCameraIds.add(cameraId);
     await _initializedControllers.remove(cameraId)?.close();
     _errorControllers.remove(cameraId);
   }
