@@ -905,7 +905,7 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       return jsonEncode({
-        'type': '여름 쿨',
+        'type': '여름 쿨 트루',
         'recommendedColors': ['라벤더', '소프트 블루'],
         'avoidColors': ['강한 오렌지'],
         'comment': 'Local Gemma 퍼스널 컬러 테스트 응답입니다.',
@@ -933,7 +933,7 @@ void main() {
       ),
     );
 
-    expect(result.type, '여름 쿨');
+    expect(result.type, '여름 쿨 트루');
     expect(calls.single.method, 'analyzePersonalColor');
     final arguments = calls.single.arguments as Map<Object?, Object?>;
     expect(
@@ -943,6 +943,41 @@ void main() {
     expect(arguments['modelName'], 'Gemma 4 E4B-it');
     expect(arguments['imagePath'], 'face.png');
     expect(arguments['prompt'], '퍼스널 컬러 prompt');
+  });
+
+  test('LocalGemmaPersonalColorService maps out-of-list type to nearest 12 type',
+      () async {
+    const channel = MethodChannel('fitface/local_gemma_personal_map_test');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      // 로컬 모델이 옛 6유형 표기("여름 쿨")를 반환하는 상황.
+      return jsonEncode({
+        'type': '여름 쿨',
+        'recommendedColors': ['라벤더'],
+        'avoidColors': ['강한 오렌지'],
+        'comment': '응답입니다.',
+      });
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    });
+
+    final service = LocalGemmaPersonalColorService(
+      settings: AiSettings.defaults().copyWith(mode: AiEngineMode.localGemma),
+      channel: channel,
+    );
+
+    final result = await service.analyze(
+      const PersonalColorAnalysisRequest(
+        faceImagePath: 'face.png',
+        prompt: 'p',
+        includeImage: false,
+      ),
+    );
+
+    // 목록 밖 값은 가장 가까운 12유형(여름 → 트루)으로 정규화된다.
+    expect(result.type, '여름 쿨 트루');
   });
 
   test('OpenAiPersonalColorService posts sanitized image to proxy', () async {

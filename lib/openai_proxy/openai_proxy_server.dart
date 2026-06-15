@@ -70,6 +70,26 @@ class OpenAiProxyConfig {
 /// 앱과 프록시가 공유하는 인증 헤더 이름.
 const fitFaceProxyAuthHeader = 'x-fitface-token';
 
+/// 퍼스널 컬러 12계절 유형의 정식 문자열.
+///
+/// 앱 측 단일 소스(`lib/domain/personal_color/personal_color_type.dart`)의
+/// `PersonalColorTypes.labels`와 글자까지 동일해야 한다. 프록시는 Dart 코드를
+/// 공유하지 않으므로 여기에 별도로 둔다. 한쪽을 고치면 반드시 다른 쪽도 고친다.
+const personalColorTypeLabels = <String>[
+  '봄 웜 라이트',
+  '봄 웜 트루',
+  '봄 웜 브라이트',
+  '여름 쿨 라이트',
+  '여름 쿨 트루',
+  '여름 쿨 뮤트',
+  '가을 웜 뮤트',
+  '가을 웜 트루',
+  '가을 웜 딥',
+  '겨울 쿨 브라이트',
+  '겨울 쿨 트루',
+  '겨울 쿨 딥',
+];
+
 String? _envValue(Map<String, String> env, String key) {
   final value = env[key]?.trim();
   return value == null ? null : _stripEnvQuotes(value);
@@ -485,7 +505,7 @@ class FitFaceOpenAiProxy {
       'type': 'object',
       'additionalProperties': false,
       'properties': {
-        'type': {'type': 'string'},
+        'type': {'type': 'string', 'enum': personalColorTypeLabels},
         'recommendedColors': _stringArraySchema(maxItems: 5),
         'avoidColors': _stringArraySchema(maxItems: 5),
         'comment': {'type': 'string'},

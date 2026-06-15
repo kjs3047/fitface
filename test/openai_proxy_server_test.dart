@@ -203,7 +203,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       client: _FakeResponsesClient((body) {
         captured = body;
         return _openAiOutput({
-          'type': '여름 쿨',
+          'type': '여름 쿨 트루',
           'recommendedColors': ['라벤더', '소프트 블루'],
           'avoidColors': ['강한 오렌지'],
           'comment': '색상정보 기준 분석입니다.',
@@ -217,7 +217,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       'mode': 'featuresOnly',
     });
 
-    expect((response['result'] as Map)['type'], '여름 쿨');
+    expect((response['result'] as Map)['type'], '여름 쿨 트루');
     expect(captured['model'], 'gpt-test');
     final user = (captured['input'] as List)[1] as Map;
     final content = user['content'] as List;
@@ -225,10 +225,27 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       content.any((item) => item is Map && item['type'] == 'input_image'),
       isFalse,
     );
-    expect(
-      (((captured['text'] as Map)['format'] as Map)['name']),
-      'fitface_personal_color',
-    );
+    final format = (captured['text'] as Map)['format'] as Map;
+    expect(format['name'], 'fitface_personal_color');
+
+    // type 필드는 12계절 유형 enum으로 제약된다.
+    final schema = format['schema'] as Map<String, dynamic>;
+    final typeSchema =
+        (schema['properties'] as Map)['type'] as Map<String, dynamic>;
+    final typeEnum = (typeSchema['enum'] as List).cast<String>();
+    expect(typeEnum.length, 12);
+    expect(typeEnum, contains('여름 쿨 트루'));
+    expect(typeEnum, contains('봄 웜 라이트'));
+    expect(typeEnum, contains('겨울 쿨 딥'));
+    // 옛 6유형 표기는 enum에 없어야 한다.
+    expect(typeEnum, isNot(contains('여름 쿨')));
+  });
+
+  test('personal color schema enum matches the canonical 12 type labels', () {
+    expect(personalColorTypeLabels.length, 12);
+    expect(personalColorTypeLabels.toSet().length, 12);
+    expect(personalColorTypeLabels.first, '봄 웜 라이트');
+    expect(personalColorTypeLabels.last, '겨울 쿨 딥');
   });
 
   test('unknown endpoint returns standardized proxy exception', () async {
@@ -257,7 +274,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       ),
       client: _FakeResponsesClient(
         (_) => _openAiOutput({
-          'type': '여름 쿨',
+          'type': '여름 쿨 트루',
           'recommendedColors': <String>[],
           'avoidColors': <String>[],
           'comment': 'ok',
@@ -300,7 +317,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       token: 'secret-token',
     );
     expect(ok.statusCode, 200);
-    expect(jsonDecode(ok.body)['result']['type'], '여름 쿨');
+    expect(jsonDecode(ok.body)['result']['type'], '여름 쿨 트루');
   });
 
   test('requests are served without an auth token when none is configured',
@@ -309,7 +326,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       config: const OpenAiProxyConfig(apiKey: 'test-key'),
       client: _FakeResponsesClient(
         (_) => _openAiOutput({
-          'type': '봄 웜',
+          'type': '봄 웜 라이트',
           'recommendedColors': <String>[],
           'avoidColors': <String>[],
           'comment': 'ok',
@@ -328,7 +345,7 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
       {'prompt': 'p', 'mode': 'featuresOnly'},
     );
     expect(ok.statusCode, 200);
-    expect(jsonDecode(ok.body)['result']['type'], '봄 웜');
+    expect(jsonDecode(ok.body)['result']['type'], '봄 웜 라이트');
   });
 }
 
