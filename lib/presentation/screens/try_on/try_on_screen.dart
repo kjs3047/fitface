@@ -14,9 +14,11 @@ import '../../../providers/snapshot_provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../routes/route_names.dart';
 import '../../widgets/app_top_bar.dart';
+import '../compare/snapshot_image_viewer_screen.dart';
 
-/// 스냅샷당 가상착장 재생성 상한(비용 방어).
-const kMaxTryOnRegen = 3;
+/// 스냅샷당 가상착장 생성 호출 상한(비용 방어).
+/// 최초 1회 + 재생성 1회 = 총 2회까지만 OpenAI를 호출한다.
+const kMaxTryOnRegen = 2;
 
 class TryOnScreen extends ConsumerStatefulWidget {
   const TryOnScreen({required this.snapshotId, super.key});
@@ -39,6 +41,38 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
       }
     }
     return null;
+  }
+
+  /// 이미 결과가 있으면(=다시 생성) 비용 발생을 확인받은 뒤에만 생성한다.
+  Future<void> _onGeneratePressed({
+    required OutfitSnapshot snapshot,
+    required UserProfile profile,
+  }) async {
+    if (snapshot.hasTryOnImage) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('다시 생성할까요?'),
+          content: const Text(
+            '이미 만든 결과가 있어요. 다시 생성하면 이미지 생성 비용이 한 번 더 발생합니다.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('다시 생성'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) {
+        return;
+      }
+    }
+    await _generate(snapshot: snapshot, profile: profile);
   }
 
   Future<void> _generate({
@@ -112,13 +146,27 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
     final settings =
         ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
 
-    return Scaffold(
-      backgroundColor: AppTheme.paper,
-      appBar: const AppTopBar(title: '가상착장'),
-      body: SafeArea(
-        child: snapshot == null
-            ? const Center(child: Text('스냅샷을 찾을 수 없습니다.'))
-            : _buildBody(snapshot, profile, settings),
+    // 생성 중에는 뒤로가기를 막는다. 실수로 나가면 비용만 나가고 결과 확인이
+    // 어렵기 때문이다.
+    return PopScope(
+      canPop: !_generating,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _generating) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('이미지를 생성하는 중이에요. 완료될 때까지 기다려 주세요.'),
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppTheme.paper,
+        appBar: const AppTopBar(title: '가상착장'),
+        body: SafeArea(
+          child: snapshot == null
+              ? const Center(child: Text('스냅샷을 찾을 수 없습니다.'))
+              : _buildBody(snapshot, profile, settings),
+        ),
       ),
     );
   }
@@ -176,11 +224,36 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
       children: [
         _BodyInfoSummary(profile: profile),
         const SizedBox(height: 14),
-        AspectRatio(
-          aspectRatio: 3 / 4,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: _buildPreview(snapshot),
+        GestureDetector(
+          onTap: () => _openViewer(snapshot),
+          child: AspectRatio(
+            aspectRatio: 3 / 4,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildPreview(snapshot),
+                  // 확대해서 볼 수 있다는 힌트.
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.zoom_in,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -223,7 +296,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
             child: FilledButton.icon(
               onPressed: reachedLimit && !hasFreshResult
                   ? null
-                  : () => _generate(snapshot: snapshot, profile: profile),
+                  : () => _onGeneratePressed(snapshot: snapshot, profile: profile),
               icon: const Icon(Icons.checkroom_outlined),
               label: Text(
                 snapshot.hasTryOnImage ? '다시 생성' : '가상착장 만들기',
@@ -233,7 +306,7 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
         if (reachedLimit) ...[
           const SizedBox(height: 8),
           Text(
-            '재생성 횟수($kMaxTryOnRegen회)를 모두 사용했어요.',
+            '이 스냅샷의 생성 횟수를 모두 사용했어요. 저장된 결과를 확인하세요.',
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
@@ -250,12 +323,27 @@ class _TryOnScreenState extends ConsumerState<TryOnScreen> {
     );
   }
 
-  Widget _buildPreview(OutfitSnapshot snapshot) {
-    // 원본 토글이 켜졌거나 아직 결과가 없으면 원본(또는 합성본)을 보여준다.
+  /// 현재 미리보기에 표시 중인 이미지 경로(원본 토글 상태 반영).
+  String _currentPreviewPath(OutfitSnapshot snapshot) {
     final showOriginal = _showOriginal || !snapshot.hasTryOnImage;
-    final path = showOriginal
+    return showOriginal
         ? (snapshot.rawImagePath ?? snapshot.imagePath)
         : snapshot.tryOnImagePath!;
+  }
+
+  void _openViewer(OutfitSnapshot snapshot) {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (context) => SnapshotImageViewerScreen(
+          imagePath: _currentPreviewPath(snapshot),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreview(OutfitSnapshot snapshot) {
+    final path = _currentPreviewPath(snapshot);
     return Image.file(
       File(path),
       fit: BoxFit.cover,

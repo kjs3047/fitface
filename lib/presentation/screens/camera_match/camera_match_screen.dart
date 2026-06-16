@@ -372,9 +372,10 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
     setState(() => _isSaving = true);
     OutfitSnapshot? pending;
     try {
-      // 오버레이 없는 원본(가상착장 입력) → 합성본 순으로 캡처한다.
-      final rawBytes = await _captureFrame(hideOverlay: true);
+      // 합성본(오버레이 포함) 먼저 — 기본 화면 상태라 즉시 정확하게 찍힌다.
+      // 그다음 오버레이를 숨겨 원본(가상착장 입력)을 찍는다.
       final overlayBytes = await _captureFrame(hideOverlay: false);
+      final rawBytes = await _captureFrame(hideOverlay: true);
       final notifier = ref.read(snapshotProvider.notifier);
       pending = await notifier.createSnapshotFromBytes(
         overlayBytes,

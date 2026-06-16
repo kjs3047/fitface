@@ -317,21 +317,31 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                           ],
                         ),
                         const SizedBox(height: 8),
-                        FilledButton.icon(
-                          key: const Key('try-on-entry'),
-                          onPressed: () {
+                        Builder(
+                          builder: (context) {
                             final current = _currentSnapshot(snapshots);
-                            if (current == null) {
-                              return;
-                            }
-                            Navigator.pushNamed(
-                              context,
-                              RouteNames.tryOn,
-                              arguments: current.id,
+                            final hasResult = current?.hasTryOnImage ?? false;
+                            return FilledButton.icon(
+                              key: const Key('try-on-entry'),
+                              onPressed: current == null
+                                  ? null
+                                  : () => Navigator.pushNamed(
+                                        context,
+                                        RouteNames.tryOn,
+                                        arguments: current.id,
+                                      ),
+                              icon: Icon(
+                                hasResult
+                                    ? Icons.check_circle_outline
+                                    : Icons.checkroom_outlined,
+                              ),
+                              // 결과가 이미 있으면 명시해 불필요한 재생성(=비용)을
+                              // 유도하지 않는다.
+                              label: Text(
+                                hasResult ? '가상착장 결과 보기' : '가상착장 해보기',
+                              ),
                             );
                           },
-                          icon: const Icon(Icons.checkroom_outlined),
-                          label: const Text('가상착장 해보기'),
                         ),
                         if (isAnalyzing) ...[
                           const SizedBox(height: 12),

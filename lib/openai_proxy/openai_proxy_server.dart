@@ -207,7 +207,7 @@ class HttpOpenAiImageEditsClient implements OpenAiImageEditsClient {
     required String prompt,
     required List<OpenAiEditImage> images,
     String size = '1024x1536',
-    String quality = 'high',
+    String quality = 'medium',
   }) async {
     if (images.isEmpty) {
       throw const OpenAiProxyException(
@@ -609,11 +609,14 @@ class FitFaceOpenAiProxy {
       );
     }
     final size = (body['size'] as String?)?.trim();
+    final quality = (body['quality'] as String?)?.trim();
     final b64 = await _imageClient.editImage(
       model: config.imageModel,
       prompt: prompt,
       images: images,
       size: (size != null && size.isNotEmpty) ? size : '1024x1536',
+      // 비용 통제를 위해 기본 medium. 요청에 명시되면 그 값을 따른다.
+      quality: (quality != null && quality.isNotEmpty) ? quality : 'medium',
     );
     return {
       'result': {'imageBase64': b64},
