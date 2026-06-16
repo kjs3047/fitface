@@ -132,12 +132,12 @@ class AiPromptBuilder {
     if (type.isEmpty) {
       return null;
     }
-    final recommended = personalColor.recommendedColors
-        .where((color) => color.trim().isNotEmpty)
+    final recommended = personalColor.recommendedColorNames
+        .where((name) => name.trim().isNotEmpty)
         .take(5)
         .join(', ');
-    final avoid = personalColor.avoidColors
-        .where((color) => color.trim().isNotEmpty)
+    final avoid = personalColor.avoidColorNames
+        .where((name) => name.trim().isNotEmpty)
         .take(5)
         .join(', ');
     final parts = <String>['사용자 퍼스널 컬러 진단: $type'];

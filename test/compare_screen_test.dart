@@ -165,8 +165,8 @@ void main() {
           overrideSavedPersonalColor: true,
           savedPersonalColor: const PersonalColorResult(
             type: '여름 쿨',
-            recommendedColors: ['소프트 블루'],
-            avoidColors: ['강한 오렌지'],
+            recommendedColors: [PersonalColorSwatch(name: '소프트 블루')],
+            avoidColors: [PersonalColorSwatch(name: '강한 오렌지')],
             comment: '저장된 퍼스널 컬러 결과입니다.',
           ),
         ),

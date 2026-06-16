@@ -19,7 +19,10 @@ class PersonalColorPromptBuilder {
       '출력은 반드시 JSON 객체 하나만 사용한다. 설명 문장이나 markdown은 쓰지 않는다.',
       '필수 JSON 필드: type, recommendedColors, avoidColors, comment.',
       'type은 위 12유형 목록 중 정확히 하나를 한 글자도 바꾸지 말고 그대로 쓴다.',
-      'recommendedColors와 avoidColors는 각각 한국어 색상명 5개 이내 배열로 작성한다.',
+      'recommendedColors와 avoidColors는 각각 5개 이내의 객체 배열이며, '
+          '각 원소는 {"name": 한국어 색상명, "hex": "#RRGGBB"} 형식이다.',
+      'hex는 그 색상명이 실제로 가리키는 색의 6자리 CSS 코드여야 한다. '
+          '예: 테라코타→"#C66E4E", 라벤더→"#B8A9E6". 임의의 회색으로 채우지 않는다.',
     ].join('\n');
   }
 
@@ -35,7 +38,9 @@ class PersonalColorPromptBuilder {
       '출력은 JSON 객체 하나만 사용한다.',
       '필드: type, recommendedColors, avoidColors, comment.',
       'type은 위 12유형 목록 중 정확히 하나를 한 글자도 바꾸지 말고 그대로 쓴다.',
-      'recommendedColors와 avoidColors는 각각 한국어 색상명 배열로 작성한다.',
+      'recommendedColors와 avoidColors는 각각 객체 배열이며, 각 원소는 '
+          '{"name": 한국어 색상명, "hex": "#RRGGBB"} 형식이다.',
+      'hex는 그 색상명이 실제로 가리키는 색의 6자리 CSS 코드여야 한다.',
       'comment는 쇼핑용 컬러 조언 한 문장으로 작성한다.',
     ].join('\n');
   }

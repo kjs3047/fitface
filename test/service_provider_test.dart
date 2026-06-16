@@ -266,8 +266,11 @@ void main() {
       openAiService: openAiEngine,
       personalColor: const PersonalColorResult(
         type: '여름 쿨',
-        recommendedColors: ['소프트 블루', '라벤더'],
-        avoidColors: ['강한 오렌지'],
+        recommendedColors: [
+          PersonalColorSwatch(name: '소프트 블루'),
+          PersonalColorSwatch(name: '라벤더'),
+        ],
+        avoidColors: [PersonalColorSwatch(name: '강한 오렌지')],
         comment: '쿨톤 진단입니다.',
       ),
     );
@@ -315,8 +318,11 @@ void main() {
         loaderCalls++;
         return const PersonalColorResult(
           type: '여름 쿨',
-          recommendedColors: ['소프트 블루', '라벤더'],
-          avoidColors: ['강한 오렌지'],
+          recommendedColors: [
+            PersonalColorSwatch(name: '소프트 블루'),
+            PersonalColorSwatch(name: '라벤더'),
+          ],
+          avoidColors: [PersonalColorSwatch(name: '강한 오렌지')],
           comment: '쿨톤 진단입니다.',
         );
       },
@@ -373,8 +379,11 @@ void main() {
       openAiService: openAiEngine,
       personalColor: const PersonalColorResult(
         type: '여름 쿨',
-        recommendedColors: ['소프트 블루', '라벤더'],
-        avoidColors: ['강한 오렌지'],
+        recommendedColors: [
+          PersonalColorSwatch(name: '소프트 블루'),
+          PersonalColorSwatch(name: '라벤더'),
+        ],
+        avoidColors: [PersonalColorSwatch(name: '강한 오렌지')],
         comment: '쿨톤 진단입니다.',
       ),
     );
@@ -893,7 +902,7 @@ void main() {
     final result = await service.analyze(faceImagePath: sourceFile.path);
 
     expect(result.type, '여름 쿨');
-    expect(result.recommendedColors, contains('소프트 블루'));
+    expect(result.recommendedColorNames, contains('소프트 블루'));
     expect(result.comment, contains('색상정보'));
   });
 
@@ -1030,7 +1039,7 @@ void main() {
     expect(capturedBody?['imageMimeType'], 'image/jpeg');
     expect(capturedBody?['mode'], 'imageAndFeatures');
     expect(result.type, '여름 쿨');
-    expect(result.recommendedColors, contains('소프트 블루'));
+    expect(result.recommendedColorNames, contains('소프트 블루'));
   });
 
   test('CameraOverlayProvider clamps opacity and scale', () async {
@@ -1073,8 +1082,11 @@ class _PersonalColorVisionFailsTextSucceedsEngine
     }
     return const PersonalColorResult(
       type: '여름 쿨',
-      recommendedColors: ['라벤더', '소프트 블루'],
-      avoidColors: ['강한 오렌지'],
+      recommendedColors: [
+        PersonalColorSwatch(name: '라벤더'),
+        PersonalColorSwatch(name: '소프트 블루'),
+      ],
+      avoidColors: [PersonalColorSwatch(name: '강한 오렌지')],
       comment: '색상정보 기반 퍼스널 컬러 분석입니다.',
     );
   }

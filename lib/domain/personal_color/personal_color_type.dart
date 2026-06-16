@@ -10,6 +10,8 @@
 /// 글자까지 일치시켜야 한다.
 library;
 
+import '../../data/models/personal_color_result.dart';
+
 /// 분류 축 — 온도.
 enum ColorTemperature { warm, cool }
 
@@ -41,15 +43,19 @@ class PersonalColorType {
   final ColorValue value;
   final ColorChroma chroma;
 
-  /// rule-based 폴백에서 쓰는 유형별 추천 색상 5종.
-  final List<String> recommendedColors;
+  /// rule-based 폴백에서 쓰는 유형별 추천 색상 5종(이름 + HEX).
+  final List<PersonalColorSwatch> recommendedColors;
 
-  /// rule-based 폴백에서 쓰는 유형별 주의 색상 5종.
-  final List<String> avoidColors;
+  /// rule-based 폴백에서 쓰는 유형별 주의 색상 5종(이름 + HEX).
+  final List<PersonalColorSwatch> avoidColors;
 
   bool get isWarm => temperature == ColorTemperature.warm;
   bool get isCool => temperature == ColorTemperature.cool;
 }
+
+/// 색상명+HEX 한 쌍을 짧게 만드는 헬퍼(팔레트 정의 가독성용).
+PersonalColorSwatch _s(String name, String hex) =>
+    PersonalColorSwatch(name: name, hex: hex);
 
 /// 12유형 정의 목록. 프록시 enum / 프롬프트 기준표 / rule-based 팔레트가
 /// 모두 이 목록을 단일 출처로 삼는다.
@@ -57,123 +63,267 @@ class PersonalColorTypes {
   const PersonalColorTypes._();
 
   // ── 봄 (웜) ──────────────────────────────────────────────
-  static const springLight = PersonalColorType(
+  static final springLight = PersonalColorType(
     label: '봄 웜 라이트',
     season: '봄',
     temperature: ColorTemperature.warm,
     value: ColorValue.light,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['크림', '피치', '라이트 코랄', '애플 그린', '라이트 카멜'],
-    avoidColors: ['차콜', '블랙', '버건디', '쿨 퍼플', '네이비'],
+    recommendedColors: [
+      _s('크림', '#F5EBDC'),
+      _s('피치', '#F6C9A8'),
+      _s('라이트 코랄', '#F2A18C'),
+      _s('애플 그린', '#A7C957'),
+      _s('라이트 카멜', '#D2B48C'),
+    ],
+    avoidColors: [
+      _s('차콜', '#36454F'),
+      _s('블랙', '#171412'),
+      _s('버건디', '#7B2D3A'),
+      _s('쿨 퍼플', '#6A4C93'),
+      _s('네이비', '#2F415E'),
+    ],
   );
-  static const springTrue = PersonalColorType(
+  static final springTrue = PersonalColorType(
     label: '봄 웜 트루',
     season: '봄',
     temperature: ColorTemperature.warm,
     value: ColorValue.medium,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['코랄', '웜 옐로', '라이트 카멜', '오렌지 레드', '골드 베이지'],
-    avoidColors: ['차콜', '블랙', '쿨 그레이', '아이스 블루', '버건디'],
+    recommendedColors: [
+      _s('코랄', '#FF7F50'),
+      _s('웜 옐로', '#F2C14E'),
+      _s('라이트 카멜', '#D2B48C'),
+      _s('오렌지 레드', '#E8602C'),
+      _s('골드 베이지', '#D9B98C'),
+    ],
+    avoidColors: [
+      _s('차콜', '#36454F'),
+      _s('블랙', '#171412'),
+      _s('쿨 그레이', '#8D9BA8'),
+      _s('아이스 블루', '#C6E2E9'),
+      _s('버건디', '#7B2D3A'),
+    ],
   );
-  static const springBright = PersonalColorType(
+  static final springBright = PersonalColorType(
     label: '봄 웜 브라이트',
     season: '봄',
     temperature: ColorTemperature.warm,
     value: ColorValue.medium,
     chroma: ColorChroma.bright,
-    recommendedColors: ['쨍한 코랄', '클리어 옐로', '터쿼이즈', '비비드 그린', '오렌지'],
-    avoidColors: ['탁한 베이지', '먹색', '더스티 핑크', '뮤트 그레이', '카키'],
+    recommendedColors: [
+      _s('쨍한 코랄', '#FF6B53'),
+      _s('클리어 옐로', '#FFD400'),
+      _s('터쿼이즈', '#40E0D0'),
+      _s('비비드 그린', '#3CB44B'),
+      _s('오렌지', '#F26A21'),
+    ],
+    avoidColors: [
+      _s('탁한 베이지', '#C2B49A'),
+      _s('먹색', '#3A3A38'),
+      _s('더스티 핑크', '#C9A0A8'),
+      _s('뮤트 그레이', '#9A9A94'),
+      _s('카키', '#8F8B5E'),
+    ],
   );
 
   // ── 여름 (쿨) ────────────────────────────────────────────
-  static const summerLight = PersonalColorType(
+  static final summerLight = PersonalColorType(
     label: '여름 쿨 라이트',
     season: '여름',
     temperature: ColorTemperature.cool,
     value: ColorValue.light,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['라벤더', '파스텔 핑크', '연한 블루', '아이보리', '라이트 그레이'],
-    avoidColors: ['강한 오렌지', '카멜', '머스터드', '딥 브라운', '토마토 레드'],
+    recommendedColors: [
+      _s('라벤더', '#B8A9E6'),
+      _s('파스텔 핑크', '#F4C2D7'),
+      _s('연한 블루', '#AAC9E6'),
+      _s('아이보리', '#F7F0E1'),
+      _s('라이트 그레이', '#CFD2D6'),
+    ],
+    avoidColors: [
+      _s('강한 오렌지', '#F2600C'),
+      _s('카멜', '#C19A6B'),
+      _s('머스터드', '#D4A017'),
+      _s('딥 브라운', '#5A3E2B'),
+      _s('토마토 레드', '#E5503A'),
+    ],
   );
-  static const summerTrue = PersonalColorType(
+  static final summerTrue = PersonalColorType(
     label: '여름 쿨 트루',
     season: '여름',
     temperature: ColorTemperature.cool,
     value: ColorValue.medium,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['로즈 핑크', '아이스 블루', '소프트 블루', '실버 그레이', '쿨 민트'],
-    avoidColors: ['강한 오렌지', '머스터드', '카멜', '브릭', '웜 베이지'],
+    recommendedColors: [
+      _s('로즈 핑크', '#D6809E'),
+      _s('아이스 블루', '#C6E2E9'),
+      _s('소프트 블루', '#9DB7D5'),
+      _s('실버 그레이', '#B6BCC2'),
+      _s('쿨 민트', '#9ED8C3'),
+    ],
+    avoidColors: [
+      _s('강한 오렌지', '#F2600C'),
+      _s('머스터드', '#D4A017'),
+      _s('카멜', '#C19A6B'),
+      _s('브릭', '#9C4A38'),
+      _s('웜 베이지', '#D7C3A4'),
+    ],
   );
-  static const summerMuted = PersonalColorType(
+  static final summerMuted = PersonalColorType(
     label: '여름 쿨 뮤트',
     season: '여름',
     temperature: ColorTemperature.cool,
     value: ColorValue.medium,
     chroma: ColorChroma.muted,
-    recommendedColors: ['더스티 로즈', '파우더 블루', '뮤트 라벤더', '소프트 그레이', '세이지'],
-    avoidColors: ['쨍한 코랄', '비비드 옐로', '네온 핑크', '클리어 오렌지', '쨍한 화이트'],
+    recommendedColors: [
+      _s('더스티 로즈', '#C29AA0'),
+      _s('파우더 블루', '#AEC6D8'),
+      _s('뮤트 라벤더', '#A99CBD'),
+      _s('소프트 그레이', '#AFAFA8'),
+      _s('세이지', '#A3B18A'),
+    ],
+    avoidColors: [
+      _s('쨍한 코랄', '#FF6B53'),
+      _s('비비드 옐로', '#FFE000'),
+      _s('네온 핑크', '#FF4FA3'),
+      _s('클리어 오렌지', '#FF7A1A'),
+      _s('쨍한 화이트', '#FFFFFF'),
+    ],
   );
 
   // ── 가을 (웜) ────────────────────────────────────────────
-  static const autumnMuted = PersonalColorType(
+  static final autumnMuted = PersonalColorType(
     label: '가을 웜 뮤트',
     season: '가을',
     temperature: ColorTemperature.warm,
     value: ColorValue.medium,
     chroma: ColorChroma.muted,
-    recommendedColors: ['올리브', '웜 베이지', '머스터드', '테라코타', '세이지 그린'],
-    avoidColors: ['아이스 블루', '형광 핑크', '실버 그레이', '쿨 민트', '쨍한 화이트'],
+    recommendedColors: [
+      _s('올리브', '#808000'),
+      _s('웜 베이지', '#D7C3A4'),
+      _s('머스터드', '#D4A017'),
+      _s('테라코타', '#C66E4E'),
+      _s('세이지 그린', '#9CAA87'),
+    ],
+    avoidColors: [
+      _s('아이스 블루', '#C6E2E9'),
+      _s('형광 핑크', '#FF4FA3'),
+      _s('실버 그레이', '#B6BCC2'),
+      _s('쿨 민트', '#9ED8C3'),
+      _s('쨍한 화이트', '#FFFFFF'),
+    ],
   );
-  static const autumnTrue = PersonalColorType(
+  static final autumnTrue = PersonalColorType(
     label: '가을 웜 트루',
     season: '가을',
     temperature: ColorTemperature.warm,
     value: ColorValue.medium,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['카멜', '브릭', '머스터드', '올리브', '웜 브라운'],
-    avoidColors: ['아이스 블루', '형광 핑크', '쿨 그레이', '파스텔 라벤더', '쨍한 화이트'],
+    recommendedColors: [
+      _s('카멜', '#C19A6B'),
+      _s('브릭', '#9C4A38'),
+      _s('머스터드', '#D4A017'),
+      _s('올리브', '#808000'),
+      _s('웜 브라운', '#7A5B47'),
+    ],
+    avoidColors: [
+      _s('아이스 블루', '#C6E2E9'),
+      _s('형광 핑크', '#FF4FA3'),
+      _s('쿨 그레이', '#8D9BA8'),
+      _s('파스텔 라벤더', '#D5C7EA'),
+      _s('쨍한 화이트', '#FFFFFF'),
+    ],
   );
-  static const autumnDeep = PersonalColorType(
+  static final autumnDeep = PersonalColorType(
     label: '가을 웜 딥',
     season: '가을',
     temperature: ColorTemperature.warm,
     value: ColorValue.deep,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['다크 브라운', '딥 올리브', '버건디 브라운', '포레스트 그린', '딥 카멜'],
-    avoidColors: ['파스텔 핑크', '아이스 블루', '라이트 그레이', '쿨 민트', '연한 라벤더'],
+    recommendedColors: [
+      _s('다크 브라운', '#4A3527'),
+      _s('딥 올리브', '#4F5320'),
+      _s('버건디 브라운', '#5E2E2A'),
+      _s('포레스트 그린', '#2D4A35'),
+      _s('딥 카멜', '#9A6F45'),
+    ],
+    avoidColors: [
+      _s('파스텔 핑크', '#F4C2D7'),
+      _s('아이스 블루', '#C6E2E9'),
+      _s('라이트 그레이', '#CFD2D6'),
+      _s('쿨 민트', '#9ED8C3'),
+      _s('연한 라벤더', '#D5C7EA'),
+    ],
   );
 
   // ── 겨울 (쿨) ────────────────────────────────────────────
-  static const winterBright = PersonalColorType(
+  static final winterBright = PersonalColorType(
     label: '겨울 쿨 브라이트',
     season: '겨울',
     temperature: ColorTemperature.cool,
     value: ColorValue.medium,
     chroma: ColorChroma.bright,
-    recommendedColors: ['쿨 레드', '퓨어 화이트', '비비드 마젠타', '클리어 블루', '에메랄드'],
-    avoidColors: ['탁한 베이지', '머스터드', '카키 브라운', '웜 오렌지', '흐린 파스텔'],
+    recommendedColors: [
+      _s('쿨 레드', '#D11A45'),
+      _s('퓨어 화이트', '#FFFFFF'),
+      _s('비비드 마젠타', '#D81E8C'),
+      _s('클리어 블루', '#1F6FEB'),
+      _s('에메랄드', '#1FA67A'),
+    ],
+    avoidColors: [
+      _s('탁한 베이지', '#C2B49A'),
+      _s('머스터드', '#D4A017'),
+      _s('카키 브라운', '#766B4A'),
+      _s('웜 오렌지', '#E8742C'),
+      _s('흐린 파스텔', '#E4DDE8'),
+    ],
   );
-  static const winterTrue = PersonalColorType(
+  static final winterTrue = PersonalColorType(
     label: '겨울 쿨 트루',
     season: '겨울',
     temperature: ColorTemperature.cool,
     value: ColorValue.deep,
     chroma: ColorChroma.neutral,
-    recommendedColors: ['네이비', '쿨 레드', '퓨어 화이트', '로열 블루', '쿨 핑크'],
-    avoidColors: ['웜 베이지', '머스터드', '카멜', '테라코타', '올리브'],
+    recommendedColors: [
+      _s('네이비', '#2F415E'),
+      _s('쿨 레드', '#D11A45'),
+      _s('퓨어 화이트', '#FFFFFF'),
+      _s('로열 블루', '#2545C9'),
+      _s('쿨 핑크', '#E06C9F'),
+    ],
+    avoidColors: [
+      _s('웜 베이지', '#D7C3A4'),
+      _s('머스터드', '#D4A017'),
+      _s('카멜', '#C19A6B'),
+      _s('테라코타', '#C66E4E'),
+      _s('올리브', '#808000'),
+    ],
   );
-  static const winterDeep = PersonalColorType(
+  static final winterDeep = PersonalColorType(
     label: '겨울 쿨 딥',
     season: '겨울',
     temperature: ColorTemperature.cool,
     value: ColorValue.deep,
     chroma: ColorChroma.muted,
-    recommendedColors: ['차콜', '블랙', '버건디', '딥 네이비', '와인'],
-    avoidColors: ['웜 베이지', '머스터드', '카멜', '피치', '연한 파스텔'],
+    recommendedColors: [
+      _s('차콜', '#36454F'),
+      _s('블랙', '#171412'),
+      _s('버건디', '#7B2D3A'),
+      _s('딥 네이비', '#1E2A44'),
+      _s('와인', '#5E2233'),
+    ],
+    avoidColors: [
+      _s('웜 베이지', '#D7C3A4'),
+      _s('머스터드', '#D4A017'),
+      _s('카멜', '#C19A6B'),
+      _s('피치', '#F6C9A8'),
+      _s('연한 파스텔', '#E4DDE8'),
+    ],
   );
 
   /// 12유형 전체 — 선언 순서 = 계절 순서.
-  static const List<PersonalColorType> all = [
+  static final List<PersonalColorType> all = [
     springLight,
     springTrue,
     springBright,

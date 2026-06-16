@@ -14,9 +14,9 @@ class PersonalColorResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final recommendedSwatches =
-        result.recommendedColors.map(_ColorSwatchInfo.fromName).toList();
+        result.recommendedColors.map(_ColorSwatchInfo.fromSwatch).toList();
     final avoidSwatches =
-        result.avoidColors.map(_ColorSwatchInfo.fromName).toList();
+        result.avoidColors.map(_ColorSwatchInfo.fromSwatch).toList();
 
     return Card(
       child: Padding(
@@ -341,13 +341,19 @@ class _CompactSwatch extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
+        // 색상명은 최대 2줄까지 표시하고 넘치면 말줄임 처리한다.
+        // "라벤더 그레이", "선명한 주황"처럼 긴 이름이 한 줄에서 잘려
+        // 깨지지 않게 한다. 높이는 고정하지 않아 Wrap이 행 높이를 자식에
+        // 맞추게 두고(오버플로 방지), 텍스트만 2줄로 흐르게 한다.
         Text(
           swatch.name,
-          maxLines: 1,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
+          softWrap: true,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: AppTheme.ink,
+                height: 1.15,
               ),
         ),
         const SizedBox(height: 1),
@@ -378,6 +384,22 @@ class _ColorSwatchInfo {
   final Color color;
   final String hex;
 
+  /// AI(또는 폴백 팔레트)가 준 색상. hex가 있으면 그대로 쓰고,
+  /// 없을 때만(옛 응답/저장값) 이름 기반 근사 테이블로 폴백한다.
+  /// 이렇게 해야 "테라코타·토프" 등 테이블에 없던 색이 회색으로 뭉치지 않는다.
+  factory _ColorSwatchInfo.fromSwatch(PersonalColorSwatch swatch) {
+    final aiHex = _sanitizeHex(swatch.hex);
+    if (aiHex != null) {
+      return _ColorSwatchInfo(
+        name: swatch.name,
+        color: _parseHex(aiHex),
+        hex: aiHex,
+      );
+    }
+    return _ColorSwatchInfo.fromName(swatch.name);
+  }
+
+  /// hex가 없을 때의 이름 기반 폴백.
   factory _ColorSwatchInfo.fromName(String name) {
     final normalized = name.replaceAll(' ', '');
     var hex = '#ECE6DD';
@@ -392,6 +414,22 @@ class _ColorSwatchInfo {
       color: _parseHex(hex),
       hex: hex,
     );
+  }
+
+  /// '#RRGGBB' / 'RRGGBB' 형태만 통과시킨다. 형식이 아니면 null(→폴백).
+  static String? _sanitizeHex(String? raw) {
+    if (raw == null) {
+      return null;
+    }
+    var value = raw.trim().toUpperCase();
+    if (value.startsWith('#')) {
+      value = value.substring(1);
+    }
+    if (value.length != 6) {
+      return null;
+    }
+    final isHex = RegExp(r'^[0-9A-F]{6}$').hasMatch(value);
+    return isHex ? '#$value' : null;
   }
 
   static Color _parseHex(String hex) {

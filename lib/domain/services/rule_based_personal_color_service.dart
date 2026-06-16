@@ -11,7 +11,7 @@ class RuleBasedPersonalColorService {
   }) {
     if (features == null) {
       // 색상정보가 없으면 가장 중립적인 여름 쿨 트루 팔레트로 안내한다.
-      const fallback = PersonalColorTypes.summerTrue;
+      final fallback = PersonalColorTypes.summerTrue;
       return PersonalColorResult(
         type: fallback.label,
         recommendedColors: fallback.recommendedColors,

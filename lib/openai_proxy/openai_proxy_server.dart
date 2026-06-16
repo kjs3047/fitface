@@ -506,11 +506,32 @@ class FitFaceOpenAiProxy {
       'additionalProperties': false,
       'properties': {
         'type': {'type': 'string', 'enum': personalColorTypeLabels},
-        'recommendedColors': _stringArraySchema(maxItems: 5),
-        'avoidColors': _stringArraySchema(maxItems: 5),
+        'recommendedColors': _swatchArraySchema(maxItems: 5),
+        'avoidColors': _swatchArraySchema(maxItems: 5),
         'comment': {'type': 'string'},
       },
       'required': ['type', 'recommendedColors', 'avoidColors', 'comment'],
+    };
+  }
+
+  /// 색상 한 개 = {name, hex}. UI가 hex를 그대로 칠하므로 모델이 색상명에
+  /// 맞는 실제 #RRGGBB를 함께 반환하게 한다. strict 모드라 둘 다 required.
+  Map<String, dynamic> _swatchArraySchema({int maxItems = 5}) {
+    return {
+      'type': 'array',
+      'maxItems': maxItems,
+      'items': {
+        'type': 'object',
+        'additionalProperties': false,
+        'properties': {
+          'name': {'type': 'string'},
+          'hex': {
+            'type': 'string',
+            'description': 'CSS hex color like #RRGGBB',
+          },
+        },
+        'required': ['name', 'hex'],
+      },
     };
   }
 
