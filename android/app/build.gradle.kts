@@ -30,6 +30,16 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // LiteRT-LM은 JNI로 Kotlin 접근자(SamplerConfig.getTopK 등)를
+            // 역호출한다. R8이 이 메서드를 제거하면 nativeCreateConversation에서
+            // NoSuchMethodError로 크래시하므로 코드 축소를 끈다(온디바이스 LLM
+            // 안정성 > 축소 이득). keep 규칙은 향후 축소를 켤 때를 위해 남겨둔다.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
