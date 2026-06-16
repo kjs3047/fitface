@@ -22,16 +22,30 @@ class SnapshotRepository {
         .toList();
   }
 
-  Future<OutfitSnapshot> createSnapshotFromBytes(Uint8List bytes) async {
+  Future<OutfitSnapshot> createSnapshotFromBytes(
+    Uint8List bytes, {
+    Uint8List? rawBytes,
+  }) async {
     final now = DateTime.now();
+    final stamp = FitFaceDateUtils.fileStamp(now);
     final path = await _storage.writeBytesToSubdir(
       StorageKeys.snapshotsDir,
-      'snapshot_${FitFaceDateUtils.fileStamp(now)}.png',
+      'snapshot_$stamp.png',
       bytes,
     );
+    // 오버레이 없는 원본(가상착장 입력). 있을 때만 저장한다.
+    String? rawPath;
+    if (rawBytes != null) {
+      rawPath = await _storage.writeBytesToSubdir(
+        StorageKeys.snapshotsDir,
+        'snapshot_raw_$stamp.png',
+        rawBytes,
+      );
+    }
     return OutfitSnapshot(
       id: _uuid.v4(),
       imagePath: path,
+      rawImagePath: rawPath,
       createdAt: now,
     );
   }
@@ -70,6 +84,38 @@ class SnapshotRepository {
     snapshots[index] = snapshot;
     await _saveSnapshots(snapshots);
     return snapshot;
+  }
+
+  /// 가상착장 결과 이미지를 저장하고 스냅샷에 연결한다.
+  /// 이전 결과 파일은 지우고, 재생성 횟수를 1 올린다.
+  Future<OutfitSnapshot> saveTryOnResult({
+    required String snapshotId,
+    required Uint8List imageBytes,
+    required String bodyType,
+  }) async {
+    final snapshots = await loadSnapshots();
+    final index = snapshots.indexWhere((item) => item.id == snapshotId);
+    if (index == -1) {
+      throw StateError('후보를 찾을 수 없습니다.');
+    }
+    final old = snapshots[index];
+    final now = DateTime.now();
+    final path = await _storage.writeBytesToSubdir(
+      StorageKeys.snapshotsDir,
+      'tryon_${FitFaceDateUtils.fileStamp(now)}.png',
+      imageBytes,
+    );
+    if (old.tryOnImagePath != null) {
+      await _storage.deleteFileSafely(old.tryOnImagePath);
+    }
+    final updated = old.copyWith(
+      tryOnImagePath: path,
+      tryOnBodyType: bodyType,
+      tryOnRegenCount: old.tryOnRegenCount + 1,
+    );
+    snapshots[index] = updated;
+    await _saveSnapshots(snapshots);
+    return updated;
   }
 
   Future<OutfitSnapshot> updateAiResult({

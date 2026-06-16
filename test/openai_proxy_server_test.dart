@@ -347,6 +347,59 @@ FITFACE_PROXY_AUTH_TOKEN=local-token
     expect(ok.statusCode, 200);
     expect(jsonDecode(ok.body)['result']['type'], '봄 웜 라이트');
   });
+
+  test('image model defaults to gpt-image-2 and reads OPENAI_IMAGE_MODEL', () {
+    final defaults = OpenAiProxyConfig.fromEnvironment({
+      'OPENAI_API_KEY': 'k',
+    });
+    expect(defaults.imageModel, 'gpt-image-2');
+
+    final overridden = OpenAiProxyConfig.fromEnvironment({
+      'OPENAI_API_KEY': 'k',
+      'OPENAI_IMAGE_MODEL': 'gpt-image-1.5',
+    });
+    expect(overridden.imageModel, 'gpt-image-1.5');
+  });
+
+  test('try-on endpoint sends cloth+face to the image model', () async {
+    final fakeImage = _FakeImageEditsClient('GENERATED_B64');
+    final proxy = FitFaceOpenAiProxy(
+      config: const OpenAiProxyConfig(
+        apiKey: 'test-key',
+        imageModel: 'gpt-image-2',
+      ),
+      client: _FakeResponsesClient((_) => _openAiOutput({})),
+      imageClient: fakeImage,
+    );
+
+    // 1x1 PNG (투명) base64.
+    const px =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    final response = await proxy.handleJson('/ai/try-on', {
+      'prompt': 'full-body try-on',
+      'clothImageBase64': px,
+      'clothImageMimeType': 'image/png',
+      'faceImageBase64': px,
+      'faceImageMimeType': 'image/png',
+    });
+
+    expect((response['result'] as Map)['imageBase64'], 'GENERATED_B64');
+    expect(fakeImage.capturedModel, 'gpt-image-2');
+    expect(fakeImage.capturedImageCount, 2);
+    expect(fakeImage.capturedPrompt, 'full-body try-on');
+  });
+
+  test('try-on endpoint requires a prompt', () async {
+    final proxy = FitFaceOpenAiProxy(
+      config: const OpenAiProxyConfig(apiKey: 'test-key'),
+      client: _FakeResponsesClient((_) => _openAiOutput({})),
+      imageClient: _FakeImageEditsClient('x'),
+    );
+    expect(
+      () => proxy.handleJson('/ai/try-on', const {}),
+      throwsA(isA<OpenAiProxyException>()),
+    );
+  });
 }
 
 class _HttpResult {
@@ -405,5 +458,28 @@ class _FakeResponsesClient implements OpenAiResponsesClient {
     Map<String, dynamic> body,
   ) async {
     return handler(body);
+  }
+}
+
+class _FakeImageEditsClient implements OpenAiImageEditsClient {
+  _FakeImageEditsClient(this.b64);
+
+  final String b64;
+  String? capturedModel;
+  String? capturedPrompt;
+  int capturedImageCount = 0;
+
+  @override
+  Future<String> editImage({
+    required String model,
+    required String prompt,
+    required List<OpenAiEditImage> images,
+    String size = '1024x1536',
+    String quality = 'high',
+  }) async {
+    capturedModel = model;
+    capturedPrompt = prompt;
+    capturedImageCount = images.length;
+    return b64;
   }
 }

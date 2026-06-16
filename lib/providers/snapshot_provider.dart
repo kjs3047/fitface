@@ -25,8 +25,25 @@ class SnapshotNotifier extends StateNotifier<AsyncValue<List<OutfitSnapshot>>> {
     state = await AsyncValue.guard(_repository.loadSnapshots);
   }
 
-  Future<OutfitSnapshot> createSnapshotFromBytes(Uint8List bytes) {
-    return _repository.createSnapshotFromBytes(bytes);
+  Future<OutfitSnapshot> createSnapshotFromBytes(
+    Uint8List bytes, {
+    Uint8List? rawBytes,
+  }) {
+    return _repository.createSnapshotFromBytes(bytes, rawBytes: rawBytes);
+  }
+
+  Future<OutfitSnapshot> saveTryOnResult({
+    required String snapshotId,
+    required Uint8List imageBytes,
+    required String bodyType,
+  }) async {
+    final updated = await _repository.saveTryOnResult(
+      snapshotId: snapshotId,
+      imageBytes: imageBytes,
+      bodyType: bodyType,
+    );
+    await load();
+    return updated;
   }
 
   Future<OutfitSnapshot> add(OutfitSnapshot snapshot) async {

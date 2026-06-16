@@ -12,6 +12,7 @@ import '../screens/onboarding/onboarding_screen.dart';
 import '../screens/personal_color/personal_color_screen.dart';
 import '../screens/profile/user_basic_info_screen.dart';
 import '../screens/settings/settings_screen.dart';
+import '../screens/try_on/try_on_screen.dart';
 import '../screens/splash/splash_screen.dart';
 import 'route_names.dart';
 
@@ -59,6 +60,8 @@ class AppRoutes {
             return const PersonalColorScreen();
           case RouteNames.userBasicInfo:
             return const UserBasicInfoScreen();
+          case RouteNames.tryOn:
+            return TryOnScreen(snapshotId: settings.arguments! as String);
           case RouteNames.aiChat:
             return const LocalGemmaChatScreen();
           case RouteNames.settings:

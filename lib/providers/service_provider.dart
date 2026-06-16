@@ -14,6 +14,7 @@ import '../domain/services/local_gemma_chat_service.dart';
 import '../domain/services/local_gemma_model_service.dart';
 import '../domain/services/open_ai_analysis_service.dart';
 import '../domain/services/open_ai_personal_color_service.dart';
+import '../domain/services/open_ai_try_on_service.dart';
 import '../domain/services/open_ai_proxy_health_service.dart';
 import '../domain/services/personal_color_service.dart';
 import 'ai_settings_provider.dart';
@@ -64,6 +65,14 @@ final openAiPersonalColorServiceProvider =
   final settings =
       ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
   final service = OpenAiPersonalColorService(settings: settings);
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+final openAiTryOnServiceProvider = Provider<OpenAiTryOnService>((ref) {
+  final settings =
+      ref.watch(aiSettingsProvider).valueOrNull ?? AiSettings.defaults();
+  final service = OpenAiTryOnService(settings: settings);
   ref.onDispose(service.dispose);
   return service;
 });

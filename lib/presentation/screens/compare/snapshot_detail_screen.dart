@@ -10,6 +10,7 @@ import '../../../data/models/outfit_snapshot.dart';
 import '../../../providers/ai_settings_provider.dart';
 import '../../../providers/service_provider.dart';
 import '../../../providers/snapshot_provider.dart';
+import '../../routes/route_names.dart';
 import '../../widgets/ai_processing_status.dart';
 import '../../widgets/app_top_bar.dart';
 import '../../widgets/personal_color_hint_banner.dart';
@@ -314,6 +315,23 @@ class _SnapshotDetailScreenState extends ConsumerState<SnapshotDetailScreen> {
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          key: const Key('try-on-entry'),
+                          onPressed: () {
+                            final current = _currentSnapshot(snapshots);
+                            if (current == null) {
+                              return;
+                            }
+                            Navigator.pushNamed(
+                              context,
+                              RouteNames.tryOn,
+                              arguments: current.id,
+                            );
+                          },
+                          icon: const Icon(Icons.checkroom_outlined),
+                          label: const Text('가상착장 해보기'),
                         ),
                         if (isAnalyzing) ...[
                           const SizedBox(height: 12),

@@ -116,6 +116,48 @@ void main() {
     expect(snapshots[1].id, fourth.id);
   });
 
+  test('createSnapshotFromBytes stores a separate raw image when given',
+      () async {
+    final repository = SnapshotRepository(storage);
+    final snapshot = await repository.createSnapshotFromBytes(
+      Uint8List.fromList([1, 2, 3]),
+      rawBytes: Uint8List.fromList([4, 5, 6]),
+    );
+    expect(snapshot.hasRawImage, isTrue);
+    expect(snapshot.rawImagePath, isNot(snapshot.imagePath));
+    // raw 없이 만들면 null.
+    final noRaw =
+        await repository.createSnapshotFromBytes(Uint8List.fromList([7]));
+    expect(noRaw.hasRawImage, isFalse);
+  });
+
+  test('saveTryOnResult links image, body type, and bumps regen count',
+      () async {
+    final repository = SnapshotRepository(storage);
+    final snapshot = await repository.createSnapshotFromBytes(
+      Uint8List.fromList([1, 2, 3]),
+      rawBytes: Uint8List.fromList([4, 5, 6]),
+    );
+    await repository.addSnapshot(snapshot);
+
+    final first = await repository.saveTryOnResult(
+      snapshotId: snapshot.id,
+      imageBytes: Uint8List.fromList([10, 11, 12]),
+      bodyType: 'normal',
+    );
+    expect(first.hasTryOnImage, isTrue);
+    expect(first.tryOnBodyType, 'normal');
+    expect(first.tryOnRegenCount, 1);
+
+    final second = await repository.saveTryOnResult(
+      snapshotId: snapshot.id,
+      imageBytes: Uint8List.fromList([13, 14, 15]),
+      bodyType: 'plus',
+    );
+    expect(second.tryOnRegenCount, 2);
+    expect(second.tryOnBodyType, 'plus');
+  });
+
   test('AiAnalysisResult keeps candidate scores in json', () {
     const result = AiAnalysisResult(
       score: 91,

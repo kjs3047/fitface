@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
@@ -40,6 +41,10 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
   bool _permissionDenied = false;
   bool _isSaving = false;
   bool _isAiPreviewing = false;
+
+  /// 원본(raw) 캡처 동안만 오버레이를 숨긴다. 가상착장 입력으로 쓸
+  /// 오버레이 없는 프레임을 얻기 위해 합성 캡처 직전 1프레임 숨겼다 찍는다.
+  bool _hideOverlayForRawCapture = false;
   String? _error;
   bool _isRouteObserverSubscribed = false;
 
@@ -331,6 +336,35 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
     }
   }
 
+  /// 캡처 영역을 PNG 바이트로 만든다. [hideOverlay]면 오버레이를 끈 상태로
+  /// 1프레임 렌더한 뒤 찍어 옷만 담긴 원본 프레임을 얻는다.
+  Future<Uint8List> _captureFrame({required bool hideOverlay}) async {
+    // async gap 전에 devicePixelRatio를 미리 읽어둔다.
+    final pixelRatio = MediaQuery.of(context).devicePixelRatio;
+    if (hideOverlay) {
+      setState(() => _hideOverlayForRawCapture = true);
+      // 다음 프레임에 오버레이가 빠진 화면이 그려질 때까지 기다린다.
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    try {
+      final boundary = _captureKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) {
+        throw StateError('캡처 영역을 찾을 수 없습니다.');
+      }
+      final image = await boundary.toImage(pixelRatio: pixelRatio);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) {
+        throw StateError('캡처 이미지를 만들 수 없습니다.');
+      }
+      return data.buffer.asUint8List();
+    } finally {
+      if (hideOverlay && mounted) {
+        setState(() => _hideOverlayForRawCapture = false);
+      }
+    }
+  }
+
   Future<void> _saveSnapshot() async {
     if (_isSaving) {
       return;
@@ -338,20 +372,14 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
     setState(() => _isSaving = true);
     OutfitSnapshot? pending;
     try {
-      final boundary = _captureKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
-      if (boundary == null) {
-        throw StateError('캡처 영역을 찾을 수 없습니다.');
-      }
-      final pixelRatio = MediaQuery.of(context).devicePixelRatio;
-      final image = await boundary.toImage(pixelRatio: pixelRatio);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) {
-        throw StateError('캡처 이미지를 만들 수 없습니다.');
-      }
+      // 오버레이 없는 원본(가상착장 입력) → 합성본 순으로 캡처한다.
+      final rawBytes = await _captureFrame(hideOverlay: true);
+      final overlayBytes = await _captureFrame(hideOverlay: false);
       final notifier = ref.read(snapshotProvider.notifier);
-      pending =
-          await notifier.createSnapshotFromBytes(data.buffer.asUint8List());
+      pending = await notifier.createSnapshotFromBytes(
+        overlayBytes,
+        rawBytes: rawBytes,
+      );
       await notifier.load();
       final current =
           ref.read(snapshotProvider).value ?? const <OutfitSnapshot>[];
@@ -496,21 +524,24 @@ class _CameraMatchScreenState extends ConsumerState<CameraMatchScreen>
                             fit: StackFit.expand,
                             children: [
                               _buildCameraPreview(),
-                              FaceOverlayWidget(
-                                imagePath: overlayPath,
-                                state: overlay,
-                                onMove: ref
-                                    .read(cameraOverlayProvider.notifier)
-                                    .moveBy,
-                                onTransform: (position, scale) {
-                                  ref
+                              // raw 캡처 순간에는 오버레이를 그리지 않아
+                              // 옷만 담긴 원본 프레임을 얻는다.
+                              if (!_hideOverlayForRawCapture)
+                                FaceOverlayWidget(
+                                  imagePath: overlayPath,
+                                  state: overlay,
+                                  onMove: ref
                                       .read(cameraOverlayProvider.notifier)
-                                      .setTransform(
-                                        position: position,
-                                        scale: scale,
-                                      );
-                                },
-                              ),
+                                      .moveBy,
+                                  onTransform: (position, scale) {
+                                    ref
+                                        .read(cameraOverlayProvider.notifier)
+                                        .setTransform(
+                                          position: position,
+                                          scale: scale,
+                                        );
+                                  },
+                                ),
                             ],
                           ),
                         ),

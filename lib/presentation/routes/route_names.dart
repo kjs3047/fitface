@@ -10,6 +10,7 @@ class RouteNames {
   static const snapshotDetail = '/snapshot-detail';
   static const personalColor = '/personal-color';
   static const userBasicInfo = '/user-basic-info';
+  static const tryOn = '/try-on';
   static const aiChat = '/ai-chat';
   static const settings = '/settings';
 }

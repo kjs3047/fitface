@@ -6,6 +6,7 @@ class OpenAiProxyConfig {
   const OpenAiProxyConfig({
     required this.apiKey,
     this.model = 'gpt-5.4-mini',
+    this.imageModel = 'gpt-image-2',
     this.host = '127.0.0.1',
     this.port = 8787,
     this.maxBodyBytes = 12 * 1024 * 1024,
@@ -38,6 +39,7 @@ class OpenAiProxyConfig {
       );
     }
     final model = _envValue(env, 'OPENAI_MODEL');
+    final imageModel = _envValue(env, 'OPENAI_IMAGE_MODEL');
     final host = _envValue(env, 'FITFACE_PROXY_HOST');
     final port = _envValue(env, 'FITFACE_PROXY_PORT');
     final maxBodyBytes = _envValue(env, 'FITFACE_PROXY_MAX_BODY_BYTES');
@@ -47,6 +49,8 @@ class OpenAiProxyConfig {
     return OpenAiProxyConfig(
       apiKey: apiKey,
       model: model?.isNotEmpty == true ? model! : 'gpt-5.4-mini',
+      imageModel:
+          imageModel?.isNotEmpty == true ? imageModel! : 'gpt-image-2',
       host: host?.isNotEmpty == true ? host! : '127.0.0.1',
       port: int.tryParse(port ?? '') ?? 8787,
       maxBodyBytes: int.tryParse(maxBodyBytes ?? '') ?? 12 * 1024 * 1024,
@@ -57,6 +61,9 @@ class OpenAiProxyConfig {
 
   final String apiKey;
   final String model;
+
+  /// 가상착장 이미지 생성/편집 모델. 기본 gpt-image-2(정확도·일관성 우선).
+  final String imageModel;
   final String host;
   final int port;
   final int maxBodyBytes;
@@ -149,6 +156,155 @@ abstract class OpenAiResponsesClient {
   Future<Map<String, dynamic>> createResponse(Map<String, dynamic> body);
 }
 
+/// 가상착장용 입력 이미지 한 장(원본 바이트 + MIME).
+class OpenAiEditImage {
+  const OpenAiEditImage({
+    required this.bytes,
+    required this.mimeType,
+    required this.fileName,
+  });
+
+  final List<int> bytes;
+  final String mimeType;
+  final String fileName;
+}
+
+/// `/v1/images/edits`(gpt-image류) 호출 클라이언트. 분석용 Responses API와
+/// 달리 multipart/form-data로 보내고 data[0].b64_json을 받는다.
+abstract class OpenAiImageEditsClient {
+  /// 편집 결과 이미지의 base64 문자열을 반환한다.
+  Future<String> editImage({
+    required String model,
+    required String prompt,
+    required List<OpenAiEditImage> images,
+    String size,
+    String quality,
+  });
+}
+
+class HttpOpenAiImageEditsClient implements OpenAiImageEditsClient {
+  HttpOpenAiImageEditsClient({
+    required String apiKey,
+    HttpClient? httpClient,
+    Uri? endpoint,
+    this.requestTimeout = const Duration(seconds: 120),
+  })  : _apiKey = apiKey,
+        _httpClient = (httpClient ?? HttpClient())
+          ..connectionTimeout = const Duration(seconds: 10),
+        _endpoint =
+            endpoint ?? Uri.parse('https://api.openai.com/v1/images/edits');
+
+  final String _apiKey;
+  final HttpClient _httpClient;
+  final Uri _endpoint;
+
+  /// 생성은 분석보다 오래 걸리므로 타임아웃을 넉넉히 잡는다.
+  final Duration requestTimeout;
+
+  @override
+  Future<String> editImage({
+    required String model,
+    required String prompt,
+    required List<OpenAiEditImage> images,
+    String size = '1024x1536',
+    String quality = 'high',
+  }) async {
+    if (images.isEmpty) {
+      throw const OpenAiProxyException(
+        'TRYON_NO_INPUT_IMAGE',
+        'At least one input image is required.',
+      );
+    }
+    final boundary = '----fitface${DateTime.now().microsecondsSinceEpoch}';
+    final body = _buildMultipartBody(
+      boundary: boundary,
+      fields: {
+        'model': model,
+        'prompt': prompt,
+        'size': size,
+        'quality': quality,
+        'n': '1',
+      },
+      images: images,
+    );
+    try {
+      final request =
+          await _httpClient.postUrl(_endpoint).timeout(requestTimeout);
+      request.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'multipart/form-data; boundary=$boundary',
+      );
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $_apiKey');
+      request.add(body);
+      final response = await request.close().timeout(requestTimeout);
+      final text = await utf8.decodeStream(response).timeout(requestTimeout);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw OpenAiProxyException(
+          'OPENAI_IMAGE_REQUEST_FAILED',
+          'OpenAI image edit failed: ${response.statusCode} $text',
+          HttpStatus.badGateway,
+        );
+      }
+      final decoded = jsonDecode(text) as Map<String, dynamic>;
+      final data = decoded['data'] as List<dynamic>?;
+      if (data == null || data.isEmpty) {
+        throw const OpenAiProxyException(
+          'OPENAI_IMAGE_EMPTY',
+          'OpenAI image edit returned no data.',
+          HttpStatus.badGateway,
+        );
+      }
+      final b64 = (data.first as Map<String, dynamic>)['b64_json'] as String?;
+      if (b64 == null || b64.isEmpty) {
+        throw const OpenAiProxyException(
+          'OPENAI_IMAGE_EMPTY',
+          'OpenAI image edit returned no image.',
+          HttpStatus.badGateway,
+        );
+      }
+      return b64;
+    } on TimeoutException {
+      throw const OpenAiProxyException(
+        'OPENAI_TIMEOUT',
+        'OpenAI image edit timed out.',
+        HttpStatus.gatewayTimeout,
+      );
+    }
+  }
+
+  /// multipart/form-data 본문을 직접 조립한다.
+  /// 이미지는 `image[]` 필드로 반복 첨부(gpt-image edits 규약).
+  List<int> _buildMultipartBody({
+    required String boundary,
+    required Map<String, String> fields,
+    required List<OpenAiEditImage> images,
+  }) {
+    final chunks = <int>[];
+    void writeAscii(String s) => chunks.addAll(ascii.encode(s));
+
+    fields.forEach((name, value) {
+      writeAscii('--$boundary\r\n');
+      writeAscii('Content-Disposition: form-data; name="$name"\r\n\r\n');
+      chunks.addAll(utf8.encode(value));
+      writeAscii('\r\n');
+    });
+
+    for (final image in images) {
+      writeAscii('--$boundary\r\n');
+      writeAscii(
+        'Content-Disposition: form-data; name="image[]"; '
+        'filename="${image.fileName}"\r\n',
+      );
+      writeAscii('Content-Type: ${image.mimeType}\r\n\r\n');
+      chunks.addAll(image.bytes);
+      writeAscii('\r\n');
+    }
+
+    writeAscii('--$boundary--\r\n');
+    return chunks;
+  }
+}
+
 class HttpOpenAiResponsesClient implements OpenAiResponsesClient {
   HttpOpenAiResponsesClient({
     required String apiKey,
@@ -198,10 +354,14 @@ class FitFaceOpenAiProxy {
   FitFaceOpenAiProxy({
     required this.config,
     OpenAiResponsesClient? client,
-  }) : _client = client ?? HttpOpenAiResponsesClient(apiKey: config.apiKey);
+    OpenAiImageEditsClient? imageClient,
+  })  : _client = client ?? HttpOpenAiResponsesClient(apiKey: config.apiKey),
+        _imageClient =
+            imageClient ?? HttpOpenAiImageEditsClient(apiKey: config.apiKey);
 
   final OpenAiProxyConfig config;
   final OpenAiResponsesClient _client;
+  final OpenAiImageEditsClient _imageClient;
 
   Future<HttpServer> start({
     Object address = '127.0.0.1',
@@ -299,6 +459,8 @@ class FitFaceOpenAiProxy {
         return _compareSnapshots(body);
       case '/ai/personal-color':
         return _analyzePersonalColor(body);
+      case '/ai/try-on':
+        return _generateTryOn(body);
       default:
         throw const OpenAiProxyException(
           'NOT_FOUND',
@@ -419,6 +581,70 @@ class FitFaceOpenAiProxy {
       ),
     );
     return {'result': _decodeStructuredResult(openAiResponse)};
+  }
+
+  /// 가상착장 생성. 얼굴 + 옷(원본) 이미지를 gpt-image edits로 합성한다.
+  Future<Map<String, dynamic>> _generateTryOn(
+    Map<String, dynamic> body,
+  ) async {
+    final prompt = _requiredString(body, 'prompt');
+    final images = <OpenAiEditImage>[];
+    // 옷(원본 스냅샷)을 먼저, 얼굴을 그 다음에 — 편집 기준 이미지가 옷이다.
+    _addEditImageIfPresent(
+      images,
+      base64Data: body['clothImageBase64'] as String?,
+      mimeType: body['clothImageMimeType'] as String?,
+      fileName: 'cloth.png',
+    );
+    _addEditImageIfPresent(
+      images,
+      base64Data: body['faceImageBase64'] as String?,
+      mimeType: body['faceImageMimeType'] as String?,
+      fileName: 'face.png',
+    );
+    if (images.isEmpty) {
+      throw const OpenAiProxyException(
+        'MISSING_TRYON_IMAGE',
+        'At least one input image (cloth or face) is required.',
+      );
+    }
+    final size = (body['size'] as String?)?.trim();
+    final b64 = await _imageClient.editImage(
+      model: config.imageModel,
+      prompt: prompt,
+      images: images,
+      size: (size != null && size.isNotEmpty) ? size : '1024x1536',
+    );
+    return {
+      'result': {'imageBase64': b64},
+    };
+  }
+
+  void _addEditImageIfPresent(
+    List<OpenAiEditImage> images, {
+    required String? base64Data,
+    required String? mimeType,
+    required String fileName,
+  }) {
+    if (base64Data == null || base64Data.isEmpty) {
+      return;
+    }
+    final mime = mimeType?.trim().isNotEmpty == true
+        ? mimeType!.trim()
+        : 'image/png';
+    if (!mime.startsWith('image/')) {
+      throw const OpenAiProxyException(
+        'INVALID_IMAGE_MIME_TYPE',
+        'Only image MIME types are supported.',
+      );
+    }
+    images.add(
+      OpenAiEditImage(
+        bytes: base64Decode(base64Data),
+        mimeType: mime,
+        fileName: fileName,
+      ),
+    );
   }
 
   Map<String, dynamic> _responseBody({
