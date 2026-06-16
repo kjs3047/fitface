@@ -1,5 +1,7 @@
 # FitFace
 
+> 한국어: [README.ko.md](README.ko.md)
+
 FitFace is a local-first Flutter app for checking how clothing suits you in a
 store — before the fitting room. You overlay your registered face-to-neck image
 onto the rear-camera view of real clothes, and optional on-device or cloud AI
