@@ -9,6 +9,7 @@ import 'package:fitface/data/models/ai_analysis_result.dart';
 import 'package:fitface/data/repositories/ai_settings_repository.dart';
 import 'package:fitface/data/repositories/snapshot_repository.dart';
 import 'package:fitface/data/repositories/user_profile_repository.dart';
+import 'package:fitface/domain/profile/body_type.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -46,6 +47,47 @@ void main() {
 
     await repository.clearProfile(deleteImages: false);
     expect(await repository.loadProfile(), isNull);
+  });
+
+  test('saveBasicInfo creates a profile even without a registered face',
+      () async {
+    final repository = UserProfileRepository(storage);
+
+    // 얼굴 등록 전(프로필 없음)에도 기본정보 저장 가능해야 한다.
+    final saved = await repository.saveBasicInfo(
+      gender: Gender.male,
+      bodyType: BodyType.muscular,
+      heightCm: 178,
+      weightKg: 74,
+    );
+    expect(saved.gender, Gender.male);
+    expect(saved.bodyType, BodyType.muscular);
+    expect(saved.heightCm, 178);
+    expect(saved.weightKg, 74);
+    expect(saved.croppedFaceImagePath, isNull);
+
+    final loaded = await repository.loadProfile();
+    expect(loaded?.bodyType, BodyType.muscular);
+    expect(loaded?.hasBodyInfo, isTrue);
+  });
+
+  test('saveBasicInfo preserves existing face/personal-color fields',
+      () async {
+    final repository = UserProfileRepository(storage);
+    await repository.saveFace(
+      originalFaceImagePath: 'o.jpg',
+      croppedFaceImagePath: 'c.jpg',
+      overlayFaceImagePath: 'v.png',
+    );
+    await repository.savePersonalColorType('가을 웜 뮤트');
+
+    final updated = await repository.saveBasicInfo(
+      gender: Gender.female,
+      bodyType: BodyType.bottomHeavy,
+    );
+    expect(updated.croppedFaceImagePath, 'c.jpg');
+    expect(updated.personalColorType, '가을 웜 뮤트');
+    expect(updated.bodyType, BodyType.bottomHeavy);
   });
 
   test('SnapshotRepository keeps max 3 and supports replacement', () async {

@@ -527,6 +527,16 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                   const Divider(height: 1),
+                  _SettingsTile(
+                    icon: Icons.straighten,
+                    title: '사용자 기본정보',
+                    subtitle: '키·몸무게·체형 (가상착장에 사용)',
+                    onTap: () => Navigator.pushNamed(
+                      context,
+                      RouteNames.userBasicInfo,
+                    ),
+                  ),
+                  const Divider(height: 1),
                   const _SettingsTile(
                     icon: Icons.info_outline,
                     title: '앱 버전',

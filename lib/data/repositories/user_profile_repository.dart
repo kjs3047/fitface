@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/storage_keys.dart';
+import '../../domain/profile/body_type.dart';
 import '../local/local_file_storage.dart';
 import '../models/user_profile.dart';
 
@@ -36,6 +37,33 @@ class UserProfileRepository {
       croppedFaceImagePath: croppedFaceImagePath,
       overlayFaceImagePath: overlayFaceImagePath,
       clearPersonalColorType: true,
+      updatedAt: now,
+    );
+    await saveProfile(profile);
+    return profile;
+  }
+
+  /// 가상착장용 신체 정보 저장. 얼굴 등록 전에도 저장할 수 있게,
+  /// 프로필이 없으면 새로 만든다.
+  Future<UserProfile> saveBasicInfo({
+    required Gender gender,
+    required BodyType bodyType,
+    int? heightCm,
+    int? weightKg,
+  }) async {
+    final now = DateTime.now();
+    final current = await loadProfile();
+    final profile = (current ??
+            UserProfile(
+              id: _uuid.v4(),
+              createdAt: now,
+              updatedAt: now,
+            ))
+        .copyWith(
+      gender: gender,
+      bodyType: bodyType,
+      heightCm: heightCm,
+      weightKg: weightKg,
       updatedAt: now,
     );
     await saveProfile(profile);

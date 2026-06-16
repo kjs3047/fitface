@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/user_profile.dart';
 import '../data/repositories/user_profile_repository.dart';
+import '../domain/profile/body_type.dart';
 import 'repository_provider.dart';
 
 final userProfileProvider =
@@ -30,6 +31,22 @@ class UserProfileNotifier extends StateNotifier<AsyncValue<UserProfile?>> {
       originalFaceImagePath: originalFaceImagePath,
       croppedFaceImagePath: croppedFaceImagePath,
       overlayFaceImagePath: overlayFaceImagePath,
+    );
+    state = AsyncValue.data(profile);
+    return profile;
+  }
+
+  Future<UserProfile> saveBasicInfo({
+    required Gender gender,
+    required BodyType bodyType,
+    int? heightCm,
+    int? weightKg,
+  }) async {
+    final profile = await _repository.saveBasicInfo(
+      gender: gender,
+      bodyType: bodyType,
+      heightCm: heightCm,
+      weightKg: weightKg,
     );
     state = AsyncValue.data(profile);
     return profile;

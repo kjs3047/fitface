@@ -9,6 +9,7 @@ class RouteNames {
   static const compare = '/compare';
   static const snapshotDetail = '/snapshot-detail';
   static const personalColor = '/personal-color';
+  static const userBasicInfo = '/user-basic-info';
   static const aiChat = '/ai-chat';
   static const settings = '/settings';
 }
