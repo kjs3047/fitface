@@ -577,6 +577,10 @@ void main() {
     expect(arguments['prompt'], contains('얼굴 사진 변경'));
     expect(arguments['prompt'], contains('모델 파일 가져오기'));
     expect(arguments['prompt'], contains('OpenAI 프록시 주소'));
+    // 가이드가 현재 기능(가상착장/기본정보/12계절)을 포함하는지 — 누락 방지.
+    expect(arguments['prompt'], contains('가상착장'));
+    expect(arguments['prompt'], contains('사용자 기본정보'));
+    expect(arguments['prompt'], contains('12계절'));
     expect(arguments['prompt'], contains('가을 재킷 색상 추천해줘'));
     expect(arguments['prompt'], contains('최근 대화 기록'));
     final features = arguments['features'] as Map<Object?, Object?>;
