@@ -16,7 +16,7 @@ class OpenAiTryOnService {
   OpenAiTryOnService({
     required AiSettings settings,
     HttpClient? client,
-    this.requestTimeout = const Duration(seconds: 150),
+    this.requestTimeout = const Duration(seconds: 200),
   })  : _settings = settings,
         _client = (client ?? HttpClient())
           ..connectionTimeout = const Duration(seconds: 10);

@@ -187,7 +187,9 @@ class HttpOpenAiImageEditsClient implements OpenAiImageEditsClient {
     required String apiKey,
     HttpClient? httpClient,
     Uri? endpoint,
-    this.requestTimeout = const Duration(seconds: 120),
+    // 앱(200s)보다 길게 잡아 프록시가 먼저 끊겨 과금만 되고 결과를 못 받는
+    // 상황을 막는다.
+    this.requestTimeout = const Duration(seconds: 210),
   })  : _apiKey = apiKey,
         _httpClient = (httpClient ?? HttpClient())
           ..connectionTimeout = const Duration(seconds: 10),
@@ -610,17 +612,32 @@ class FitFaceOpenAiProxy {
     }
     final size = (body['size'] as String?)?.trim();
     final quality = (body['quality'] as String?)?.trim();
-    final b64 = await _imageClient.editImage(
-      model: config.imageModel,
-      prompt: prompt,
-      images: images,
-      size: (size != null && size.isNotEmpty) ? size : '1024x1536',
-      // 비용 통제를 위해 기본 medium. 요청에 명시되면 그 값을 따른다.
-      quality: (quality != null && quality.isNotEmpty) ? quality : 'medium',
+    // 가상착장 요청 추적 로그(운영 진단용). 생성은 오래 걸리므로 시작/완료/
+    // 실패와 소요 시간을 남겨 타임아웃·과금 문제를 진단할 수 있게 한다.
+    final startedAt = DateTime.now();
+    stderr.writeln(
+      '[try-on] start model=${config.imageModel} images=${images.length} '
+      'size=${size ?? '1024x1536'} quality=${quality ?? 'medium'}',
     );
-    return {
-      'result': {'imageBase64': b64},
-    };
+    try {
+      final b64 = await _imageClient.editImage(
+        model: config.imageModel,
+        prompt: prompt,
+        images: images,
+        size: (size != null && size.isNotEmpty) ? size : '1024x1536',
+        // 비용 통제를 위해 기본 medium. 요청에 명시되면 그 값을 따른다.
+        quality: (quality != null && quality.isNotEmpty) ? quality : 'medium',
+      );
+      final secs = DateTime.now().difference(startedAt).inSeconds;
+      stderr.writeln('[try-on] ok in ${secs}s, b64 len=${b64.length}');
+      return {
+        'result': {'imageBase64': b64},
+      };
+    } catch (error) {
+      final secs = DateTime.now().difference(startedAt).inSeconds;
+      stderr.writeln('[try-on] FAILED in ${secs}s: $error');
+      rethrow;
+    }
   }
 
   void _addEditImageIfPresent(
