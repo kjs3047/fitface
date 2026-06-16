@@ -282,7 +282,8 @@ class _BodyTypeGrid extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 10,
       crossAxisSpacing: 10,
-      childAspectRatio: 0.72,
+      // 이미지 2:3 + 하단 라벨 + 패딩을 담도록 카드를 세로로 길게.
+      childAspectRatio: 0.58,
       children: [
         for (final type in BodyType.values)
           _BodyTypeCard(
@@ -327,8 +328,12 @@ class _BodyTypeCard extends StatelessWidget {
         ),
         padding: const EdgeInsets.all(8),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
+            // 원본 PNG가 2:3(1024x1536)으로 통일돼 있어 같은 비율 틀에
+            // contain으로 넣으면 잘림·여백 없이 가지런하다.
+            AspectRatio(
+              aspectRatio: 2 / 3,
               child: _BodyTypeImage(gender: gender, type: type),
             ),
             const SizedBox(height: 6),
@@ -357,14 +362,19 @@ class _BodyTypeImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      bodyTypeAsset(gender, type),
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stackTrace) => const Center(
-        child: Icon(
-          Icons.accessibility_new,
-          color: AppTheme.mutedInk,
-          size: 36,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.asset(
+        bodyTypeAsset(gender, type),
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) => const Center(
+          child: Icon(
+            Icons.accessibility_new,
+            color: AppTheme.mutedInk,
+            size: 36,
+          ),
         ),
       ),
     );
